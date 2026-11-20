@@ -1255,21 +1255,17 @@ static int32_t smcinvoke_map_mem_region_locked(struct smcinvoke_mem_obj* mem_obj
 		 * after decreasing the reference.
 		 */
 		mutex_lock(&g_smcinvoke_lock);
-		kref_put(&mem_obj->mem_map_obj_ref_cnt, del_mem_map_obj_locked);
-
 		if (ret) {
-			ret = OBJECT_ERROR_INVALID;
 			pr_err("Unable to create shm bridge, ret: %d\n", ret);
-			goto out;
+			ret = OBJECT_ERROR_INVALID;
+		} else if (!kref_read(&mem_obj->mem_regn_ref_cnt)) {
+			pr_err("Memory region released during mapping\n");
+			ret = OBJECT_ERROR_BADOBJ;
+		} else {
+			mem_obj->mem_map_obj_id = next_mem_map_obj_id_locked();
 		}
 
-		if (!find_mem_obj_locked(mem_obj->mem_region_id,
-				SMCINVOKE_MEM_RGN_OBJ)) {
-			pr_err("Memory object not found\n");
-			return OBJECT_ERROR_BADOBJ;
-		}
-
-		mem_obj->mem_map_obj_id = next_mem_map_obj_id_locked();
+		kref_put(&mem_obj->mem_map_obj_ref_cnt, del_mem_map_obj_locked);
 	}
 
 out:
