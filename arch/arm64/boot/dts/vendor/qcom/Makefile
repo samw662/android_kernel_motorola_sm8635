@@ -762,7 +762,28 @@ sdmsteppeauto-overlays-dtb-$(CONFIG_ARCH_SA6155) += $(SA6155_BOARDS) $(SA6155P_B
 
 dtb-y += $(sdmsteppeauto-dtb-y)
 
-always-y        := $(dtb-y)
+ctwo-dtbs := cliffs-ctwo-base.dtb cliffs-arcfox-base.dtb \
+	      pineapple-arcf-base.dtb pineapple-v2-arcf-base.dtb \
+	      pineapple-ctwov-base.dtb pineapple-v2-ctwov-base.dtb
+ctwo-dtbos := cliffs-ctwo-evb3-overlay.dtbo \
+	      cliffs-ctwo-dvt1-overlay.dtbo \
+	      cliffs-ctwo-dvt1b-overlay.dtbo \
+	      cliffs-arcfox-evt3-overlay.dtbo \
+	      cliffs-arcfox-dvt1b-overlay.dtbo \
+	      cliffs-arcfox-dvt1c-overlay.dtbo \
+	      cliffs-arcfox-jp-evt-overlay.dtbo \
+	      pineapple-arcf-evt1a-overlay.dtbo \
+	      pineapple-arcf-evt2-overlay.dtbo \
+	      pineapple-ctwov-evb-overlay.dtbo
+
+ifeq ($(CONFIG_CTWO_DTB),y)
+dtb-y += $(call add-overlays,$(ctwo-dtbos),$(ctwo-dtbs))
+dtbo-y += $(ctwo-dtbos)
+pineapple-overlays-dtb-y += $(ctwo-dtbs) $(ctwo-dtbos) \
+			   display/cliffs-sde-display-ctwo-evb3-overlay.dtbo
+endif
+
+always-y        := $(dtb-y) $(dtbo-y)
 subdir-y        := $(dts-dirs)
 subdir-y        += audio bt camera data display dsp eSE eva fingerprint graphics mm mmrm mm-sys nfc synx video wlan
 clean-files     := *.dtb *.dtbo
