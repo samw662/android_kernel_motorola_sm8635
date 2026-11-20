@@ -43,6 +43,20 @@ config SPECTRA_SENSOR
 	  eeprom, flash, csiphy all other module will be included
 	  to make the sensor functional.
 
+config AF_NOISE_ELIMINATION
+	bool "Motorola actuator noise control"
+	depends on SPECTRA_SENSOR
+
+config MOT_OIS_EARLY_UPGRADE_FW
+	bool "Motorola OIS firmware upgrade"
+	depends on SPECTRA_SENSOR
+
+config CCI_DEBUG_INTF
+	bool "Motorola camera CCI diagnostic interface"
+	depends on SPECTRA_SENSOR
+	help
+	  Provide privileged raw camera I2C diagnostics through /dev/cci_intf.
+
 config SPECTRA_USE_CLK_CRM_API
 	bool "enable camera cesta clk feature"
 	help
