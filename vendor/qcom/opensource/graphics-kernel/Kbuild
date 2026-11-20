@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/mm-drivers/hw_fence/Module.symvers
+
+
 KDIR := $(TOP)/kernel_platform/common
 
 ifeq ($(KGSL_PATH),)

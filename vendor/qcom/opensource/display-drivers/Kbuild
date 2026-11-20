@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/mm-drivers/msm_ext_display/Module.symvers $(objtree)/vendor/qcom/opensource/mm-drivers/sync_fence/Module.symvers $(objtree)/vendor/qcom/opensource/securemsm-kernel/Module.symvers
+ifneq ($(BOARD_PLATFORM),volcano)
+KBUILD_EXTRA_SYMBOLS += $(objtree)/vendor/qcom/opensource/mm-drivers/hw_fence/Module.symvers $(objtree)/vendor/qcom/opensource/mmrm-driver/Module.symvers
+endif
+
+
 ifeq ($(DISPLAY_ROOT),)
 DISPLAY_ROOT=$(srctree)/techpack/display
 endif

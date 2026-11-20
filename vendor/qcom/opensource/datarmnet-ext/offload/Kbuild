@@ -1,3 +1,5 @@
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/datarmnet/core/Module.symvers
+
 obj-m += rmnet_offload.o
 #Need core headers
 ccflags-y := -I$(RMNET_CORE_INC_DIR) \

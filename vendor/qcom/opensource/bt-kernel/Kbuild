@@ -1,3 +1,5 @@
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/securemsm-kernel/Module.symvers $(objtree)/vendor/qcom/opensource/wlan/platform/Module.symvers
+
 ifeq ($(CONFIG_MSM_BT_POWER),m)
 KBUILD_CPPFLAGS += -DCONFIG_MSM_BT_POWER
 endif

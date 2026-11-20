@@ -1,3 +1,5 @@
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/datarmnet/core/Module.symvers $(objtree)/vendor/qcom/opensource/datarmnet-ext/shs/Module.symvers
+
 obj-m += rmnet_perf.o
 #Need core headers
 ccflags-y := -I$(RMNET_CORE_INC_DIR) \

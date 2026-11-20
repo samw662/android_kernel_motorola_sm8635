@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/mmrm-driver/Module.symvers $(objtree)/vendor/qcom/opensource/synx-kernel/Module.symvers $(objtree)/vendor/qcom/opensource/dsp-kernel/Module.symvers
+
+
 CONFIG_BUILD_VENDORSI := true
 
 # auto-detect subdirs

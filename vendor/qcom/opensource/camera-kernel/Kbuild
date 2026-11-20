@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
 
+KBUILD_EXTRA_SYMBOLS ?= $(objtree)/vendor/qcom/opensource/mmrm-driver/Module.symvers $(objtree)/vendor/qcom/opensource/securemsm-kernel/Module.symvers
+ifneq ($(BOARD_PLATFORM),volcano)
+KBUILD_EXTRA_SYMBOLS += $(objtree)/vendor/qcom/opensource/synx-kernel/Module.symvers
+endif
+
+
 ifeq ($(CONFIG_QCOM_CAMERA_DEBUG), y)
 $(info "CAMERA_KERNEL_ROOT is: $(CAMERA_KERNEL_ROOT)")
 $(info "KERNEL_ROOT is: $(KERNEL_ROOT)")
