@@ -126,6 +126,11 @@ ifeq ($(CONFIG_ARCH_SA8155), y)
 dtbo-y += display/sa8155-adp-star-display.dtbo
 endif
 
+dtbo-$(CONFIG_CTWO_DTB) += display/cliffs-sde-display-ctwo-evb3-overlay.dtbo \
+	display/cliffs-sde-display-arcfox-evt3-overlay.dtbo \
+	display/pineapple-sde-display-arcf-evt1a-overlay.dtbo \
+	display/pineapple-sde-display-ctwov-evb-overlay.dtbo
+
 always-y    := $(dtb-y) $(dtbo-y)
 subdir-y    := $(dts-dirs)
 clean-files    := *.dtb *.dtbo
