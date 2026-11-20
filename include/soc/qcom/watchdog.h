@@ -138,6 +138,9 @@ struct msm_watchdog_data {
 };
 
 extern void qcom_wdt_trigger_bite(void);
+#if IS_ENABLED(CONFIG_MOTO_WATCHDOG_TEST)
+int qcom_wdt_test_trigger_bite(void);
+#endif
 int qcom_wdt_register(struct platform_device *pdev,
 			struct msm_watchdog_data *wdog_dd,
 			char *wdog_dd_name);

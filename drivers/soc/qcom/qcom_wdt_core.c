@@ -39,6 +39,10 @@
 #define MASK_SIZE        32
 
 static struct msm_watchdog_data *wdog_data;
+#if IS_ENABLED(CONFIG_MOTO_WATCHDOG_TEST)
+static DEFINE_MUTEX(wdog_test_lock);
+static struct msm_watchdog_data *wdog_test_data;
+#endif
 
 static void qcom_wdt_dump_cpu_alive_mask(struct msm_watchdog_data *wdog_dd)
 {
@@ -636,6 +640,12 @@ int qcom_wdt_remove(struct platform_device *pdev)
 {
 	struct msm_watchdog_data *wdog_dd = platform_get_drvdata(pdev);
 
+#if IS_ENABLED(CONFIG_MOTO_WATCHDOG_TEST)
+	mutex_lock(&wdog_test_lock);
+	if (wdog_test_data == wdog_dd)
+		wdog_test_data = NULL;
+	mutex_unlock(&wdog_test_lock);
+#endif
 	if (!IPI_CORES_IN_LPM)
 		cpu_pm_unregister_notifier(&wdog_dd->wdog_cpu_pm_nb);
 
@@ -659,20 +669,15 @@ int qcom_wdt_remove(struct platform_device *pdev)
 }
 EXPORT_SYMBOL(qcom_wdt_remove);
 
-/**
- * qcom_wdt_trigger_bite - Executes a watchdog bite.
- *
- * Return: function will not return, to allow for the bite to occur
- */
-void qcom_wdt_trigger_bite(void)
+static void qcom_wdt_bite(struct msm_watchdog_data *wdog_dd)
 {
-	if (!wdog_data)
+	if (!wdog_dd)
 		return;
 	compute_irq_count();
-	dev_err(wdog_data->dev, "Causing a QCOM Apps Watchdog bite!\n");
-	wdog_data->ops->show_wdt_status(wdog_data);
-	wdog_data->ops->set_bite_time(1, wdog_data);
-	wdog_data->ops->reset_wdt(wdog_data);
+	dev_err(wdog_dd->dev, "Causing a QCOM Apps Watchdog bite!\n");
+	wdog_dd->ops->show_wdt_status(wdog_dd);
+	wdog_dd->ops->set_bite_time(1, wdog_dd);
+	wdog_dd->ops->reset_wdt(wdog_dd);
 	/* Delay to make sure bite occurs */
 	mdelay(10000);
 	/*
@@ -686,8 +691,32 @@ void qcom_wdt_trigger_bite(void)
 		udelay(1);
 
 }
+
+void qcom_wdt_trigger_bite(void)
+{
+	qcom_wdt_bite(READ_ONCE(wdog_data));
+}
 EXPORT_SYMBOL(qcom_wdt_trigger_bite);
 
+#if IS_ENABLED(CONFIG_MOTO_WATCHDOG_TEST)
+int qcom_wdt_test_trigger_bite(void)
+{
+	struct msm_watchdog_data *wdog_dd;
+	int ret = -ENODEV;
+
+	mutex_lock(&wdog_test_lock);
+	wdog_dd = wdog_test_data;
+	if (wdog_dd) {
+		mutex_lock(&wdog_dd->disable_lock);
+		if (wdog_dd->enabled)
+			qcom_wdt_bite(wdog_dd);
+		mutex_unlock(&wdog_dd->disable_lock);
+	}
+	mutex_unlock(&wdog_test_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(qcom_wdt_test_trigger_bite);
+#endif
 static irqreturn_t qcom_wdt_bark_handler(int irq, void *dev_id)
 {
 	struct msm_watchdog_data *wdog_dd = dev_id;
@@ -915,6 +944,11 @@ int qcom_wdt_register(struct platform_device *pdev,
 	if (msm_minidump_add_region(&md_entry) < 0)
 		dev_err(wdog_dd->dev, "Failed to add Wdt data in Minidump\n");
 
+#if IS_ENABLED(CONFIG_MOTO_WATCHDOG_TEST)
+	mutex_lock(&wdog_test_lock);
+	wdog_test_data = wdog_dd;
+	mutex_unlock(&wdog_test_lock);
+#endif
 	return 0;
 err:
 	return ret;

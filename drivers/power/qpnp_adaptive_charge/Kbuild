@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+ccflags-y += -I$(srctree)/drivers/power/mmi_charger
+ifneq ($(filter m y,$(ADAPTIVE_TOLERANCE_OPTIMIZATION)),)
+ccflags-y += -DADAPTIVE_TOLERANCE_OPTIMIZATION
+endif
+
+obj-m += qpnp_adaptive_charge.o
+KBUILD_EXTRA_SYMBOLS += $(objtree)/drivers/power/mmi_charger/Module.symvers

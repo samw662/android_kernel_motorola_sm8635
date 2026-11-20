@@ -57,6 +57,14 @@ enum zram_pageflags {
 	ZRAM_HUGE,	/* Incompressible page */
 	ZRAM_IDLE,	/* not accessed page since last idle marking */
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	ZRAM_HYB_EXTENT,
+	ZRAM_HYB_WRITE,
+	ZRAM_BATCHING_OUT,
+	ZRAM_FROM_HYBRIDSWAP,
+	ZRAM_MCGID_CLEAR,
+	ZRAM_IN_BD,
+#endif
 	__NR_ZRAM_PAGEFLAGS,
 };
 
@@ -69,6 +77,9 @@ struct zram_table_entry {
 		unsigned long element;
 	};
 	unsigned long flags;
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	unsigned long hyb_extent;
+#endif
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	ktime_t ac_time;
 #endif
@@ -119,6 +130,14 @@ struct zram {
 	 * zram is claimed so open request will be failed
 	 */
 	bool claim; /* Protected by disk->open_mutex */
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	struct block_device *hyb_bdev;
+	unsigned long hyb_nr_pages;
+	unsigned long hyb_increase_nr_pages;
+	struct hyb_info *infos;
+	bool hyb_stopping;
+	atomic_t hyb_inflight;
+#endif
 #ifdef CONFIG_ZRAM_WRITEBACK
 	struct file *backing_dev;
 	spinlock_t wb_limit_lock;

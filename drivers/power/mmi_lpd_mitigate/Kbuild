@@ -1,0 +1,9 @@
+# add -Wall to try to catch everything we can.
+EXTRA_CFLAGS += -Wall
+EXTRA_CFLAGS += -I$(srctree)/include
+EXTRA_CFLAGS += -I$(srctree)/drivers/power/qti_glink_charger
+
+obj-m += mmi_lpd_mitigate.o
+
+KBUILD_EXTRA_SYMBOLS += $(objtree)/drivers/mmi_relay/Module.symvers
+KBUILD_EXTRA_SYMBOLS += $(objtree)/drivers/power/qti_glink_charger/Module.symvers

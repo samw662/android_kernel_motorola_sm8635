@@ -197,6 +197,37 @@ static inline void set_wake_up_idle(bool wake_up_idle)
 extern int sched_lpm_disallowed_time(int cpu, u64 *timeout);
 extern int set_task_boost(int boost, u64 period);
 
+#if IS_ENABLED(CONFIG_SCHED_MOTO_UNFAIR)
+struct rq;
+struct task_struct;
+struct binder_transaction;
+
+/* Scheduling callbacks run in atomic context. The last two may sleep. */
+struct msched_ops {
+	int (*task_get_mvp_prio)(struct task_struct *p, bool with_inherit);
+	unsigned int (*task_get_mvp_limit)(struct task_struct *p, int mvp_prio);
+	void (*binder_inherit_ux_type)(struct binder_transaction *t,
+				      struct task_struct *task);
+	void (*binder_clear_inherited_ux_type)(struct binder_transaction *t,
+					      struct task_struct *task);
+	void (*binder_ux_type_set)(struct task_struct *task);
+	void (*queue_ux_task)(struct rq *rq, struct task_struct *task, int enqueue);
+	int (*validate_mask)(int mask);
+	void (*mask_changed)(int old_mask, int new_mask);
+};
+
+void sched_moto_reinc_uclamp(struct rq *rq, struct task_struct *p);
+
+/*
+ * Register immutable ops from process context before enabling. The provider
+ * must keep them alive until disabling and successful unregistration.
+ * Changing the enable mask can return -EBUSY while MVP queues are populated.
+ */
+int set_moto_sched_ops(const struct msched_ops *ops);
+int set_moto_sched_enabled(int mask);
+int get_moto_sched_enabled(void);
+#endif
+
 struct notifier_block;
 extern void core_ctl_notifier_register(struct notifier_block *n);
 extern void core_ctl_notifier_unregister(struct notifier_block *n);

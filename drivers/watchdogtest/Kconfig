@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+config MOTO_WATCHDOG_TEST
+	tristate "Motorola watchdog reset tests"
+	depends on DEBUG_FS && QCOM_WDT_CORE
+	help
+	  Provide root-only debugfs controls for deliberately triggering a
+	  Qualcomm hardware watchdog bite or a soft lockup. Loading the module
+	  does not run a test. Leave this disabled on production kernels.

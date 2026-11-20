@@ -1021,6 +1021,19 @@ static inline bool walt_flag_test(struct task_struct *p, enum walt_flags feature
 
 #define WALT_NOT_MVP		-1
 
+#if IS_ENABLED(CONFIG_SCHED_MOTO_UNFAIR)
+extern const struct msched_ops __rcu *walt_moto_ops;
+#endif
+
+static inline bool walt_moto_active(void)
+{
+#if IS_ENABLED(CONFIG_SCHED_MOTO_UNFAIR)
+	return get_moto_sched_enabled() != 0;
+#else
+	return false;
+#endif
+}
+
 #define is_mvp(wts) (wts->mvp_prio != WALT_NOT_MVP)
 void walt_cfs_enqueue_task(struct rq *rq, struct task_struct *p);
 void walt_cfs_dequeue_task(struct rq *rq, struct task_struct *p);

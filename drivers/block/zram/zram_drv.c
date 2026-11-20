@@ -41,7 +41,10 @@
 #include <linux/mm_inline.h>
 #include <linux/numa.h>
 
-#include "zram_drv.h"
+#include "zram_slot.h"
+#ifdef CONFIG_HYBRIDSWAP_CORE
+#include "../../moto_swap/hybridswap/hybridswap.h"
+#endif
 
 static DEFINE_IDR(zram_index_idr);
 /* idr index must be protected */
@@ -65,90 +68,24 @@ static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
 				u32 index, int offset, struct bio *bio);
 
 
-static int zram_slot_trylock(struct zram *zram, u32 index)
-{
-	return bit_spin_trylock(ZRAM_LOCK, &zram->table[index].flags);
-}
-
-static void zram_slot_lock(struct zram *zram, u32 index)
-{
-	bit_spin_lock(ZRAM_LOCK, &zram->table[index].flags);
-}
-
-static void zram_slot_unlock(struct zram *zram, u32 index)
-{
-	bit_spin_unlock(ZRAM_LOCK, &zram->table[index].flags);
-}
-
-static inline bool init_done(struct zram *zram)
-{
-	return zram->disksize;
-}
-
-static inline struct zram *dev_to_zram(struct device *dev)
-{
-	return (struct zram *)dev_to_disk(dev)->private_data;
-}
-
-static unsigned long zram_get_handle(struct zram *zram, u32 index)
-{
-	return zram->table[index].handle;
-}
-
-static void zram_set_handle(struct zram *zram, u32 index, unsigned long handle)
-{
-	zram->table[index].handle = handle;
-}
-
-/* flag operations require table entry bit_spin_lock() being held */
-static bool zram_test_flag(struct zram *zram, u32 index,
-			enum zram_pageflags flag)
-{
-	return zram->table[index].flags & BIT(flag);
-}
-
-static void zram_set_flag(struct zram *zram, u32 index,
-			enum zram_pageflags flag)
-{
-	zram->table[index].flags |= BIT(flag);
-}
-
-static void zram_clear_flag(struct zram *zram, u32 index,
-			enum zram_pageflags flag)
-{
-	zram->table[index].flags &= ~BIT(flag);
-}
-
-static inline void zram_set_element(struct zram *zram, u32 index,
-			unsigned long element)
-{
-	zram->table[index].element = element;
-}
-
-static unsigned long zram_get_element(struct zram *zram, u32 index)
-{
-	return zram->table[index].element;
-}
-
-static size_t zram_get_obj_size(struct zram *zram, u32 index)
-{
-	return zram->table[index].flags & (BIT(ZRAM_FLAG_SHIFT) - 1);
-}
-
-static void zram_set_obj_size(struct zram *zram,
-					u32 index, size_t size)
-{
-	unsigned long flags = zram->table[index].flags >> ZRAM_FLAG_SHIFT;
-
-	zram->table[index].flags = (flags << ZRAM_FLAG_SHIFT) | size;
-}
-
 static inline bool zram_allocated(struct zram *zram, u32 index)
 {
 	return zram_get_obj_size(zram, index) ||
 			zram_test_flag(zram, index, ZRAM_SAME) ||
 			zram_test_flag(zram, index, ZRAM_WB);
 }
+
+#ifdef CONFIG_HYBRIDSWAP_CORE
+static void zram_hyb_wait_slot(struct zram *zram, u32 index)
+{
+	while (hybridswap_slot_busy(zram, index)) {
+		zram_slot_unlock(zram, index);
+		wait_var_event(&zram->table[index].flags,
+			       !hybridswap_slot_busy(zram, index));
+		zram_slot_lock(zram, index);
+	}
+}
+#endif
 
 #if PAGE_SIZE != 4096
 static inline bool is_partial_io(struct bio_vec *bvec)
@@ -754,6 +691,11 @@ static ssize_t writeback_store_apply(struct zram *zram, unsigned long index,
 		if (!zram_allocated(zram, index))
 			goto next;
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+		if (zram_test_flag(zram, index, ZRAM_HYB_EXTENT) ||
+		    hybridswap_slot_busy(zram, index))
+			goto next;
+#endif
 		if (zram_test_flag(zram, index, ZRAM_WB) ||
 				zram_test_flag(zram, index, ZRAM_SAME) ||
 				zram_test_flag(zram, index, ZRAM_UNDER_WB))
@@ -1443,8 +1385,15 @@ static void zram_meta_free(struct zram *zram, u64 disksize)
 		return;
 
 	/* Free all pages that are still in this zram device */
-	for (index = 0; index < num_pages; index++)
+	for (index = 0; index < num_pages; index++) {
+#ifdef CONFIG_HYBRIDSWAP_CORE
+		zram_slot_lock(zram, index);
+#endif
 		zram_free_page(zram, index);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+		zram_slot_unlock(zram, index);
+#endif
+	}
 
 	zs_destroy_pool(zram->mem_pool);
 	vfree(zram->table);
@@ -1480,6 +1429,12 @@ static bool zram_meta_alloc(struct zram *zram, u64 disksize)
 static void zram_free_page(struct zram *zram, size_t index)
 {
 	unsigned long handle;
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	bool extent = zram_test_flag(zram, index, ZRAM_HYB_EXTENT);
+
+	if (hybridswap_owns_zram(zram) && zram->infos)
+		hybridswap_untrack(zram, index);
+#endif
 
 #ifdef CONFIG_ZRAM_MEMORY_TRACKING
 	zram->table[index].ac_time = 0;
@@ -1491,6 +1446,14 @@ static void zram_free_page(struct zram *zram, size_t index)
 		zram_clear_flag(zram, index, ZRAM_HUGE);
 		atomic64_dec(&zram->stats.huge_pages);
 	}
+
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	/* The backend removed this slot from pages_stored when it evicted it. */
+	if (extent) {
+		zram_set_obj_size(zram, index, 0);
+		return;
+	}
+#endif
 
 	if (zram_test_flag(zram, index, ZRAM_WB)) {
 		zram_clear_flag(zram, index, ZRAM_WB);
@@ -1534,6 +1497,15 @@ static int __zram_bvec_read(struct zram *zram, struct page *page, u32 index,
 	int ret;
 
 	zram_slot_lock(zram, index);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (zram_test_flag(zram, index, ZRAM_HYB_EXTENT)) {
+		ret = hybridswap_page_fault(zram, index);
+		if (ret || zram_test_flag(zram, index, ZRAM_HYB_EXTENT)) {
+			zram_slot_unlock(zram, index);
+			return ret ?: -EIO;
+		}
+	}
+#endif
 	if (zram_test_flag(zram, index, ZRAM_WB)) {
 		struct bio_vec bvec;
 
@@ -1727,6 +1699,9 @@ out:
 	 * before overwriting unused sectors.
 	 */
 	zram_slot_lock(zram, index);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	zram_hyb_wait_slot(zram, index);
+#endif
 	zram_free_page(zram, index);
 
 	if (comp_len == PAGE_SIZE) {
@@ -1742,10 +1717,18 @@ out:
 		zram_set_handle(zram, index, handle);
 		zram_set_obj_size(zram, index, comp_len);
 	}
-	zram_slot_unlock(zram, index);
-
-	/* Update stats */
+#ifdef CONFIG_HYBRIDSWAP_CORE
 	atomic64_inc(&zram->stats.pages_stored);
+	if (hybridswap_owns_zram(zram))
+		hybridswap_record(zram, index, page_memcg(page));
+#endif
+	zram_slot_unlock(zram, index);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (hybridswap_owns_zram(zram))
+		hybridswap_wake_reclaim();
+#else
+	atomic64_inc(&zram->stats.pages_stored);
+#endif
 	return ret;
 }
 
@@ -1817,6 +1800,9 @@ static void zram_bio_discard(struct zram *zram, u32 index,
 
 	while (n >= PAGE_SIZE) {
 		zram_slot_lock(zram, index);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+		zram_hyb_wait_slot(zram, index);
+#endif
 		zram_free_page(zram, index);
 		zram_slot_unlock(zram, index);
 		atomic64_inc(&zram->stats.notify_free);
@@ -1904,6 +1890,89 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
 	bio_endio(bio);
 }
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+struct zram_hyb_bio {
+	struct work_struct work;
+	struct zram *zram;
+	struct bio *bio;
+	bio_end_io_t *end_io;
+	void *private;
+};
+
+static DEFINE_SPINLOCK(zram_hyb_submit_lock);
+static struct workqueue_struct *zram_hyb_workqueue;
+static bool zram_hyb_initialized;
+
+static void zram_hyb_end_io(struct bio *bio)
+{
+	struct zram_hyb_bio *io = bio->bi_private;
+	struct zram *zram = io->zram;
+	unsigned long flags;
+
+	bio->bi_end_io = io->end_io;
+	bio->bi_private = io->private;
+	kfree(io);
+	spin_lock_irqsave(&zram_hyb_submit_lock, flags);
+	if (atomic_dec_and_test(&zram->hyb_inflight))
+		wake_up_var(&zram->hyb_inflight);
+	spin_unlock_irqrestore(&zram_hyb_submit_lock, flags);
+	if (bio->bi_end_io)
+		bio->bi_end_io(bio);
+}
+
+static void zram_hyb_bio_work(struct work_struct *work)
+{
+	struct zram_hyb_bio *io = container_of(work, struct zram_hyb_bio, work);
+
+	__zram_make_request(io->zram, io->bio);
+}
+
+static void zram_hyb_submit(struct zram *zram, struct bio *bio)
+{
+	struct zram_hyb_bio *io;
+	unsigned long flags;
+
+	io = kmalloc(sizeof(*io), GFP_ATOMIC);
+	if (!io) {
+		bio->bi_status = BLK_STS_RESOURCE;
+		bio_endio(bio);
+		return;
+	}
+	io->zram = zram;
+	io->bio = bio;
+	INIT_WORK(&io->work, zram_hyb_bio_work);
+
+	spin_lock_irqsave(&zram_hyb_submit_lock, flags);
+	if (!zram->hyb_stopping && hybridswap_owns_zram(zram)) {
+		io->end_io = bio->bi_end_io;
+		io->private = bio->bi_private;
+		bio->bi_end_io = zram_hyb_end_io;
+		bio->bi_private = io;
+		atomic_inc(&zram->hyb_inflight);
+		queue_work(zram_hyb_workqueue, &io->work);
+		spin_unlock_irqrestore(&zram_hyb_submit_lock, flags);
+		return;
+	}
+	spin_unlock_irqrestore(&zram_hyb_submit_lock, flags);
+	kfree(io);
+	bio_io_error(bio);
+}
+
+static void zram_hyb_stop(struct zram *zram)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&zram_hyb_submit_lock, flags);
+	zram->hyb_stopping = true;
+	spin_unlock_irqrestore(&zram_hyb_submit_lock, flags);
+	flush_workqueue(zram_hyb_workqueue);
+	wait_var_event(&zram->hyb_inflight, !atomic_read(&zram->hyb_inflight));
+	spin_lock_irqsave(&zram_hyb_submit_lock, flags);
+	spin_unlock_irqrestore(&zram_hyb_submit_lock, flags);
+	hybridswap_quiesce(zram);
+}
+#endif
+
 /*
  * Handler function for all zram I/O requests.
  */
@@ -1918,6 +1987,13 @@ static void zram_submit_bio(struct bio *bio)
 		return;
 	}
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	/* A fault may synchronously submit and wait for a backing-device bio. */
+	if (hybridswap_owns_zram(zram)) {
+		zram_hyb_submit(zram, bio);
+		return;
+	}
+#endif
 	__zram_make_request(zram, bio);
 }
 
@@ -1934,6 +2010,13 @@ static void zram_slot_free_notify(struct block_device *bdev,
 		return;
 	}
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (hybridswap_slot_busy(zram, index)) {
+		atomic64_inc(&zram->stats.miss_free);
+		zram_slot_unlock(zram, index);
+		return;
+	}
+#endif
 	zram_free_page(zram, index);
 	zram_slot_unlock(zram, index);
 }
@@ -1951,6 +2034,10 @@ static int zram_rw_page(struct block_device *bdev, sector_t sector,
 		return -ENOTSUPP;
 	zram = bdev->bd_disk->private_data;
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (hybridswap_owns_zram(zram))
+		return -EOPNOTSUPP;
+#endif
 	if (!valid_io_request(zram, sector, PAGE_SIZE)) {
 		atomic64_inc(&zram->stats.invalid_io);
 		ret = -EINVAL;
@@ -2002,8 +2089,16 @@ static void zram_reset_device(struct zram *zram)
 	set_capacity_and_notify(zram->disk, 0);
 	part_stat_set_all(zram->disk->part0, 0);
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (hybridswap_owns_zram(zram))
+		zram_hyb_stop(zram);
+#endif
 	/* I/O operation under all of CPU are done so let's free */
 	zram_meta_free(zram, zram->disksize);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	hybridswap_release(zram);
+	WRITE_ONCE(zram->hyb_stopping, false);
+#endif
 	zram->disksize = 0;
 	memset(&zram->stats, 0, sizeof(zram->stats));
 	if (zram->comp)
@@ -2140,7 +2235,36 @@ static DEVICE_ATTR_RW(writeback_limit);
 static DEVICE_ATTR_RW(writeback_limit_enable);
 #endif
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+static DEVICE_ATTR_RW(hybridswap_enable);
+static DEVICE_ATTR_RW(hybridswap_loglevel);
+static DEVICE_ATTR_RW(hybridswap_swapd_pause);
+static DEVICE_ATTR_RW(hybridswap_core_enable);
+static DEVICE_ATTR_RW(hybridswap_loop_device);
+static DEVICE_ATTR_RW(hybridswap_dev_life);
+static DEVICE_ATTR_RW(hybridswap_quota_day);
+static DEVICE_ATTR_RW(hybridswap_zram_increase);
+static DEVICE_ATTR_RO(hybridswap_vmstat);
+static DEVICE_ATTR_RO(hybridswap_report);
+static DEVICE_ATTR_RO(hybridswap_meminfo);
+static DEVICE_ATTR_RO(hybridswap_stat_snap);
+#endif
+
 static struct attribute *zram_disk_attrs[] = {
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	&dev_attr_hybridswap_enable.attr,
+	&dev_attr_hybridswap_loglevel.attr,
+	&dev_attr_hybridswap_swapd_pause.attr,
+	&dev_attr_hybridswap_core_enable.attr,
+	&dev_attr_hybridswap_loop_device.attr,
+	&dev_attr_hybridswap_dev_life.attr,
+	&dev_attr_hybridswap_quota_day.attr,
+	&dev_attr_hybridswap_zram_increase.attr,
+	&dev_attr_hybridswap_vmstat.attr,
+	&dev_attr_hybridswap_report.attr,
+	&dev_attr_hybridswap_meminfo.attr,
+	&dev_attr_hybridswap_stat_snap.attr,
+#endif
 	&dev_attr_disksize.attr,
 	&dev_attr_initstate.attr,
 	&dev_attr_reset.attr,
@@ -2186,6 +2310,9 @@ static int zram_add(void)
 	device_id = ret;
 
 	init_rwsem(&zram->init_lock);
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	atomic_set(&zram->hyb_inflight, 0);
+#endif
 #ifdef CONFIG_ZRAM_WRITEBACK
 	spin_lock_init(&zram->wb_limit_lock);
 #endif
@@ -2400,11 +2527,22 @@ static int __init zram_init(void)
 	if (ret < 0)
 		return ret;
 
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	zram_hyb_workqueue = alloc_ordered_workqueue("zram-hybridswap", WQ_MEM_RECLAIM);
+	if (!zram_hyb_workqueue) {
+		ret = -ENOMEM;
+		goto out_early;
+	}
+	ret = hybridswap_pre_init();
+	if (ret)
+		goto out_early;
+	zram_hyb_initialized = true;
+#endif
+
 	ret = class_register(&zram_control_class);
 	if (ret) {
 		pr_err("Unable to register zram-control class\n");
-		cpuhp_remove_multi_state(CPUHP_ZCOMP_PREPARE);
-		return ret;
+		goto out_early;
 	}
 
 	zram_debugfs_create();
@@ -2412,8 +2550,9 @@ static int __init zram_init(void)
 	if (zram_major <= 0) {
 		pr_err("Unable to get major number\n");
 		class_unregister(&zram_control_class);
-		cpuhp_remove_multi_state(CPUHP_ZCOMP_PREPARE);
-		return -EBUSY;
+		zram_debugfs_destroy();
+		ret = -EBUSY;
+		goto out_early;
 	}
 
 	while (num_devices != 0) {
@@ -2427,14 +2566,28 @@ static int __init zram_init(void)
 
 	return 0;
 
+out_early:
+	cpuhp_remove_multi_state(CPUHP_ZCOMP_PREPARE);
+	goto out_hyb;
 out_error:
 	destroy_devices();
+out_hyb:
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	if (zram_hyb_initialized)
+		hybridswap_exit();
+	if (zram_hyb_workqueue)
+		destroy_workqueue(zram_hyb_workqueue);
+#endif
 	return ret;
 }
 
 static void __exit zram_exit(void)
 {
 	destroy_devices();
+#ifdef CONFIG_HYBRIDSWAP_CORE
+	hybridswap_exit();
+	destroy_workqueue(zram_hyb_workqueue);
+#endif
 }
 
 module_init(zram_init);

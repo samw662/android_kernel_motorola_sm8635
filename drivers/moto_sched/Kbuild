@@ -1,0 +1,40 @@
+ifeq ($(filter y m,$(CONFIG_SCHED_MOTO_UNFAIR)),)
+$(error moto_sched requires CONFIG_SCHED_MOTO_UNFAIR and its WALT exports)
+endif
+
+ccflags-y += -I$(srctree) -I$(srctree)/$(src)
+
+obj-m += moto_sched.o
+
+ifneq ($(filter m y,$(CONFIG_MOTO_MUTEX_INHERIT)),)
+	EXTRA_CFLAGS += -DCONFIG_MOTO_MUTEX_INHERIT
+endif
+
+ifneq ($(filter m y,$(CONFIG_MOTO_RWSEM_INHERIT)),)
+	EXTRA_CFLAGS += -DCONFIG_MOTO_RWSEM_INHERIT
+endif
+
+ifneq ($(filter m y,$(CONFIG_MOTO_FUTEX_INHERIT)),)
+	EXTRA_CFLAGS += -DCONFIG_MOTO_FUTEX_INHERIT
+endif
+
+ifneq ($(filter m y,$(CONFIG_MOTO_ENABLE_MDPF)),)
+	EXTRA_CFLAGS += -DCONFIG_MOTO_ENABLE_MDPF
+endif
+
+moto_sched-y := msched_main.o msched_sysfs.o msched_common.o
+
+moto_sched-y += locking/locking_main.o
+ifneq ($(filter m y,$(CONFIG_MOTO_MUTEX_INHERIT)),)
+moto_sched-y += locking/mutex.o
+endif
+ifneq ($(filter m y,$(CONFIG_MOTO_RWSEM_INHERIT)),)
+moto_sched-y += locking/rwsem.o
+endif
+ifneq ($(filter m y,$(CONFIG_MOTO_FUTEX_INHERIT)),)
+moto_sched-y += locking/futex.o
+endif
+moto_sched-y += msched_uclamp.o
+ifneq ($(filter m y,$(CONFIG_MOTO_ENABLE_MDPF)),)
+moto_sched-y += mdpf/mdpf_sysfs.o
+endif

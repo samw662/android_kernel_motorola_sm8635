@@ -783,10 +783,11 @@ void blkdev_put_no_open(struct block_device *bdev)
 }
 
 /**
- * blkdev_get_by_dev - open a block device by device number
+ * __blkdev_get_by_dev - open a block device by device number
  * @dev: device number of block device to open
  * @mode: FMODE_* mask
  * @holder: exclusive holder identifier
+ * @direct_ufs: require a verified physical UFS queue before opening
  *
  * Open the block device described by device number @dev. If @mode includes
  * %FMODE_EXCL, the block device is opened with exclusive access.  Specifying
@@ -803,7 +804,8 @@ void blkdev_put_no_open(struct block_device *bdev)
  * RETURNS:
  * Reference to the block_device on success, ERR_PTR(-errno) on failure.
  */
-struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
+static struct block_device *__blkdev_get_by_dev(dev_t dev, fmode_t mode,
+					       void *holder, bool direct_ufs)
 {
 	bool unblock_events = true;
 	struct block_device *bdev;
@@ -821,6 +823,12 @@ struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
 	if (!bdev)
 		return ERR_PTR(-ENXIO);
 	disk = bdev->bd_disk;
+
+	if (direct_ufs && !test_bit(QUEUE_FLAG_DIRECT_UFS,
+				   &disk->queue->queue_flags)) {
+		ret = -EOPNOTSUPP;
+		goto put_blkdev;
+	}
 
 	if (mode & FMODE_EXCL) {
 		ret = bd_prepare_to_claim(bdev, holder);
@@ -874,7 +882,33 @@ put_blkdev:
 	blkdev_put_no_open(bdev);
 	return ERR_PTR(ret);
 }
+
+struct block_device *blkdev_get_by_dev(dev_t dev, fmode_t mode, void *holder)
+{
+	return __blkdev_get_by_dev(dev, mode, holder, false);
+}
 EXPORT_SYMBOL(blkdev_get_by_dev);
+
+struct block_device *blkdev_get_direct_ufs(const char *path, void *holder)
+{
+	const fmode_t mode = FMODE_READ | FMODE_WRITE | FMODE_EXCL;
+	struct block_device *bdev;
+	dev_t dev;
+	int ret;
+
+	ret = lookup_bdev(path, &dev);
+	if (ret)
+		return ERR_PTR(ret);
+
+	/* Check the queue on the same device reference that will be opened. */
+	bdev = __blkdev_get_by_dev(dev, mode, holder, true);
+	if (!IS_ERR(bdev) && bdev_read_only(bdev)) {
+		blkdev_put(bdev, mode);
+		return ERR_PTR(-EACCES);
+	}
+	return bdev;
+}
+EXPORT_SYMBOL_GPL(blkdev_get_direct_ufs);
 
 /**
  * blkdev_get_by_path - open a block device by name

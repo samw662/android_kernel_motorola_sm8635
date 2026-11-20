@@ -835,6 +835,8 @@ static inline unsigned short mem_cgroup_id(struct mem_cgroup *memcg)
 	return memcg->id.id;
 }
 struct mem_cgroup *mem_cgroup_from_id(unsigned short id);
+bool mem_cgroup_id_tryget(struct mem_cgroup *memcg);
+void mem_cgroup_id_put_ref(struct mem_cgroup *memcg);
 
 #ifdef CONFIG_SHRINKER_DEBUG
 static inline unsigned long mem_cgroup_ino(struct mem_cgroup *memcg)

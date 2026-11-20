@@ -38,4 +38,11 @@ config SCHED_CONSERVATIVE_BOOST_LPM_BIAS
 	  modes on a cpu if conservative boost is active. The cpu
 	  will not enter low power mode for a hysteresis time period,
 	  which can be configured from userspace.
+config SCHED_MOTO_UNFAIR
+	bool "Motorola scheduler integration"
+	depends on SCHED_WALT && PROC_FS && UCLAMP_TASK_GROUP
+	depends on ANDROID_VENDOR_HOOKS && ANDROID_BINDER_IPC
+	help
+	  Provide the WALT interfaces used by Motorola's optional scheduler.
+
 endmenu

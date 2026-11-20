@@ -5233,6 +5233,20 @@ static inline void mem_cgroup_id_put(struct mem_cgroup *memcg)
 	mem_cgroup_id_put_many(memcg, 1);
 }
 
+/* Pin the numeric ID of a memcg the caller already holds. */
+bool mem_cgroup_id_tryget(struct mem_cgroup *memcg)
+{
+	return refcount_inc_not_zero(&memcg->id.ref);
+}
+EXPORT_SYMBOL_GPL(mem_cgroup_id_tryget);
+
+/* The last put may invoke memcg removal hooks. */
+void mem_cgroup_id_put_ref(struct mem_cgroup *memcg)
+{
+	mem_cgroup_id_put(memcg);
+}
+EXPORT_SYMBOL_GPL(mem_cgroup_id_put_ref);
+
 /**
  * mem_cgroup_from_id - look up a memcg from a memcg id
  * @id: the memcg id to look up

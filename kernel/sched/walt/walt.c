@@ -20,8 +20,86 @@
 #include <trace/hooks/cpufreq.h>
 #include <trace/events/power.h>
 #include <trace/hooks/cgroup.h>
+#include <linux/stop_machine.h>
 #include "walt.h"
 #include "trace.h"
+
+#if IS_ENABLED(CONFIG_SCHED_MOTO_UNFAIR)
+const struct msched_ops __rcu *walt_moto_ops;
+static DEFINE_MUTEX(walt_moto_lock);
+static int walt_moto_mask;
+
+int get_moto_sched_enabled(void)
+{
+	return READ_ONCE(walt_moto_mask);
+}
+EXPORT_SYMBOL_GPL(get_moto_sched_enabled);
+
+int set_moto_sched_ops(const struct msched_ops *ops)
+{
+	int ret = 0;
+
+	mutex_lock(&walt_moto_lock);
+	if (ops && ops == rcu_access_pointer(walt_moto_ops))
+		goto out;
+	if (get_moto_sched_enabled() ||
+	    (ops && rcu_access_pointer(walt_moto_ops))) {
+		ret = -EBUSY;
+	} else {
+		rcu_assign_pointer(walt_moto_ops, ops);
+		if (!ops)
+			synchronize_rcu();
+	}
+out:
+	mutex_unlock(&walt_moto_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(set_moto_sched_ops);
+
+static int walt_moto_switch(void *data)
+{
+	int cpu;
+
+	/* Cached priorities belong to the policy that inserted them. */
+	for_each_possible_cpu(cpu) {
+		if (per_cpu(walt_rq, cpu).num_mvp_tasks)
+			return -EBUSY;
+	}
+	WRITE_ONCE(walt_moto_mask, *(int *)data);
+	return 0;
+}
+
+int set_moto_sched_enabled(int mask)
+{
+	const struct msched_ops *ops;
+	int old_mask;
+	int ret = 0;
+
+	if (mask < 0)
+		return -EINVAL;
+
+	mutex_lock(&walt_moto_lock);
+	old_mask = get_moto_sched_enabled();
+	ops = rcu_dereference_protected(walt_moto_ops,
+					lockdep_is_held(&walt_moto_lock));
+	if (mask && (READ_ONCE(walt_disabled) || !ops))
+		ret = -ENODEV;
+	else if (mask != old_mask) {
+		if (ops && ops->validate_mask) {
+			ret = ops->validate_mask(mask);
+			if (ret)
+				goto out;
+		}
+		ret = stop_machine(walt_moto_switch, &mask, NULL);
+		if (!ret && ops && ops->mask_changed)
+			ops->mask_changed(old_mask, mask);
+	}
+out:
+	mutex_unlock(&walt_moto_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(set_moto_sched_enabled);
+#endif
 
 const char *task_event_names[] = {
 	"PUT_PREV_TASK",

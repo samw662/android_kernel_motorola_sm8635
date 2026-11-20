@@ -69,6 +69,25 @@ config ZRAM_WRITEBACK
 
 	 See Documentation/admin-guide/blockdev/zram.rst for more information.
 
+config HYBRIDSWAP_CORE
+	bool "Motorola HybridSwap for zram"
+	depends on BROKEN
+	depends on ARM64_4K_PAGES
+	depends on ZRAM && MEMCG && ANDROID_VENDOR_HOOKS && SCSI_UFSHCD
+	select HYBRIDSWAP
+	select HYBRIDSWAP_SWAPD
+	help
+	  Add Motorola's compressed extent writeback and background reclaim
+	  to the native zram driver. Backing storage must be a direct
+	  physical UFS partition reserved for swap. A zram device with
+	  native writeback configured cannot also use HybridSwap.
+
+config HYBRIDSWAP
+	bool
+
+config HYBRIDSWAP_SWAPD
+	bool
+
 config ZRAM_MEMORY_TRACKING
 	bool "Track zRam block status"
 	depends on ZRAM && DEBUG_FS

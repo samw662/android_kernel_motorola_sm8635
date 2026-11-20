@@ -5260,6 +5260,9 @@ static int ufshcd_slave_configure(struct scsi_device *sdev)
 
 	ufshcd_crypto_register(hba, q);
 
+	if (sdev->type == TYPE_DISK && !scsi_is_wlun(sdev->lun))
+		blk_queue_flag_set(QUEUE_FLAG_DIRECT_UFS, q);
+
 	trace_android_vh_ufs_update_sdev(sdev);
 
 	return 0;

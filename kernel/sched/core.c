@@ -30,6 +30,7 @@
 #include <linux/sched/debug.h>
 #include <linux/sched/hotplug.h>
 #include <linux/sched/init.h>
+#include <linux/sched/walt.h>
 #include <linux/sched/isolation.h>
 #include <linux/sched/loadavg.h>
 #include <linux/sched/mm.h>
@@ -1726,6 +1727,18 @@ static inline void uclamp_rq_reinc_id(struct rq *rq, struct task_struct *p,
 	if (clamp_id == UCLAMP_MAX && (rq->uclamp_flags & UCLAMP_FLAG_IDLE))
 		rq->uclamp_flags &= ~UCLAMP_FLAG_IDLE;
 }
+
+#if IS_ENABLED(CONFIG_SCHED_MOTO_UNFAIR)
+void sched_moto_reinc_uclamp(struct rq *rq, struct task_struct *p)
+{
+	enum uclamp_id clamp_id;
+
+	lockdep_assert_rq_held(rq);
+	for_each_clamp_id(clamp_id)
+		uclamp_rq_reinc_id(rq, p, clamp_id);
+}
+EXPORT_SYMBOL_GPL(sched_moto_reinc_uclamp);
+#endif
 
 static inline void
 uclamp_update_active(struct task_struct *p)
