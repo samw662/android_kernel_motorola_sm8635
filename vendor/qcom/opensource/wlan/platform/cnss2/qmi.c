@@ -5,13 +5,16 @@
  */
 
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/soc/qcom/qmi.h>
+#include <linux/string.h>
 
 #include "bus.h"
 #include "debug.h"
 #include "main.h"
 #include "qmi.h"
 #include "genl.h"
+
 
 #define WLFW_SERVICE_INS_ID_V01		1
 #define WLFW_CLIENT_ID			0x4b4e454c
@@ -78,6 +81,92 @@ void cnss_ignore_qmi_failure(bool ignore)
 #define CNSS_QMI_ASSERT() do { } while (0)
 void cnss_ignore_qmi_failure(bool ignore) { }
 #endif
+static bool moto_bootarg(const char *key, char *value, size_t value_len)
+{
+	struct device_node *chosen;
+	const char *bootconfig, *pos;
+	size_t key_len = strlen(key), len;
+	bool found = false;
+
+	chosen = of_find_node_by_path("/chosen");
+	if (!chosen)
+		return false;
+	if (of_property_read_string(chosen, "mmi,bootconfig", &bootconfig))
+		goto out;
+	pos = bootconfig;
+	while ((pos = strstr(pos, key))) {
+		if (pos != bootconfig && pos[-1] != ' ' && pos[-1] != '\n') {
+			pos += key_len;
+			continue;
+		}
+		pos += key_len;
+		len = strcspn(pos, " \n\t");
+		if (len && len < value_len) {
+			memcpy(value, pos, len);
+			value[len] = '\0';
+			found = true;
+		}
+		break;
+	}
+out:
+	of_node_put(chosen);
+	return found;
+}
+
+struct moto_product {
+	const char *device;
+	const char *radio;
+	const char *nv_name;
+};
+
+static const struct moto_product moto_products[] = {
+	{ "rtwo", "NA", "na.epa" },
+	{ "rtwo", "PRC", "prc.epa" },
+	{ "rtwo", "ROW", "row.epa" },
+	{ "rtwo", "VZW", "vzw.epa" },
+	{ "ctwo", "PRC", "prc.epa" },
+	{ "ctwo", "ROW", "row.epa" },
+	{ "ctwo", "INDIA", "india.epa" },
+	{ "ctwov", "PRC", "prc.epa" },
+	{ "ctwov", "ROW", "row.epa" },
+	{ "ctwov", "INDIA", "india.epa" },
+	{ "arcf", "NA", "na.epa" },
+	{ "arcf", "PRC", "prc.epa" },
+	{ "arcf", "ROW", "row.epa" },
+	{ "arcfox", "NA", "na.epa" },
+	{ "arcfox", "PRC", "prc.epa" },
+	{ "arcfox", "ROW", "row.epa" },
+	{ "arcfox", "JPN", "jpn.epa" },
+	{ "oberon", "all", "epa" },
+};
+
+static bool moto_select_bdf(struct cnss_plat_data *plat_priv,
+			    char *filename, size_t filename_len)
+{
+	char device[32], radio[32];
+	const char *base;
+	size_t i;
+	int written;
+
+	if (!moto_bootarg("androidboot.device=", device, sizeof(device)) ||
+	    !moto_bootarg("androidboot.radio=", radio, sizeof(radio)))
+		return false;
+	base = plat_priv->soc_info.soc_id == 0x400c1211 ?
+		ELF_BDF_FILE_NAME_GF : ELF_BDF_FILE_NAME;
+	for (i = 0; i < ARRAY_SIZE(moto_products); i++) {
+		const struct moto_product *product = &moto_products[i];
+
+		if (strcmp(device, product->device) ||
+		    (strcmp(radio, product->radio) &&
+		     strcmp(product->radio, "all")))
+			continue;
+		written = snprintf(filename, filename_len, "%s.%s.%s", base,
+				   device, product->nv_name);
+		return written >= 0 && (size_t)written < filename_len;
+	}
+	return false;
+}
+
 
 static char *cnss_qmi_mode_to_str(enum cnss_driver_mode mode)
 {
@@ -711,15 +800,19 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 				  u32 filename_len)
 {
 	char filename_tmp[MAX_FIRMWARE_NAME_LEN];
+	char moto_device[32];
 	int ret = 0;
 
 	switch (bdf_type) {
 	case CNSS_BDF_ELF:
 		if (plat_priv->bdfname_dt[0] != 0) {
-			snprintf(filename_tmp, filename_len,
-				plat_priv->bdfname_dt);
+			snprintf(filename_tmp, filename_len, "%s",
+				 plat_priv->bdfname_dt);
 			cnss_pr_dbg("filename_tmp:%s len:%d\n",
 				    filename_tmp, filename_len);
+		} else if (moto_select_bdf(plat_priv, filename_tmp,
+					   filename_len)) {
+			cnss_pr_dbg("%s: Using %s\n", __func__, filename_tmp);
 		/* Board ID will be equal or less than 0xFF in GF mask case */
 		} else if (plat_priv->board_info.board_id == 0xFF) {
 			if (plat_priv->chip_info.chip_id & CHIP_ID_GF_MASK)
@@ -746,8 +839,8 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 		break;
 	case CNSS_BDF_BIN:
 		if (plat_priv->bdfname_dt[0] != 0) {
-			snprintf(filename_tmp, filename_len,
-				plat_priv->bdfname_dt);
+			snprintf(filename_tmp, filename_len, "%s",
+				 plat_priv->bdfname_dt);
 			cnss_pr_dbg("filename_tmp:%s len:%d\n",
 				    filename_tmp, filename_len);
 		/* Board ID will be equal or less than 0xFF in GF mask case */
@@ -775,7 +868,14 @@ static int cnss_get_bdf_file_name(struct cnss_plat_data *plat_priv,
 		}
 		break;
 	case CNSS_BDF_REGDB:
-		snprintf(filename_tmp, filename_len, REGDB_FILE_NAME);
+		if (moto_bootarg("androidboot.device=", moto_device,
+				 sizeof(moto_device))) {
+			snprintf(filename_tmp, filename_len, "%s.%s",
+				 REGDB_FILE_NAME, moto_device);
+		} else {
+			cnss_pr_dbg("device name unavailable, using default regdb file");
+			snprintf(filename_tmp, filename_len, REGDB_FILE_NAME);
+		}
 		break;
 	case CNSS_BDF_HDS:
 		snprintf(filename_tmp, filename_len, HDS_FILE_NAME);
@@ -824,12 +924,20 @@ int cnss_wlfw_bdf_dnld_send_sync(struct cnss_plat_data *plat_priv,
 		goto err_req_fw;
 
 	cnss_pr_dbg("Invoke firmware_request_nowarn for %s\n", filename);
-	if (bdf_type == CNSS_BDF_REGDB)
+	if (bdf_type == CNSS_BDF_REGDB) {
 		ret = cnss_request_firmware_direct(plat_priv, &fw_entry,
 						   filename);
-	else
+		if (ret != 0) {
+			memset(filename, 0, MAX_FIRMWARE_NAME_LEN);
+			cnss_bus_add_fw_prefix_name(plat_priv, filename, REGDB_FILE_NAME);
+			cnss_pr_dbg("Trying to load %s\n", filename);
+			ret = cnss_request_firmware_direct(plat_priv, &fw_entry,
+							   filename);
+		}
+	} else {
 		ret = firmware_request_nowarn(&fw_entry, filename,
 					      &plat_priv->plat_dev->dev);
+	}
 
 	if (ret) {
 		cnss_pr_err("Failed to load %s: %s, ret: %d\n",

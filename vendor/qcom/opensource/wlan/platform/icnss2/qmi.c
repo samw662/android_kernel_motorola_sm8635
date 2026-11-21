@@ -16,6 +16,7 @@
 #include <linux/etherdevice.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/delay.h>
 #include <linux/ipc_logging.h>
 #include <linux/thread_info.h>
@@ -66,7 +67,6 @@
 #define MAX_NUM_SHADOW_REG_V3		(QMI_WLFW_MAX_NUM_SHADOW_REG_V3_USAGE_V01 - \
 					MAX_SHADOW_REG_RESERVED)
 #define IMSPRIVATE_SERVICE_MAX_MSG_LEN  SZ_8K
-
 #ifdef CONFIG_ICNSS2_DEBUG
 bool ignore_fw_timeout;
 #define ICNSS_QMI_ASSERT() ICNSS_ASSERT(ignore_fw_timeout)
@@ -87,6 +87,53 @@ void icnss_ignore_fw_timeout(bool ignore) { }
 	icnss_pr_err("fatal: "_fmt, ##__VA_ARGS__);	\
 	ICNSS_QMI_ASSERT();				\
 	} while (0)
+
+static bool moto_bootarg(const char *key, char *value, size_t value_len)
+{
+	struct device_node *chosen;
+	const char *bootconfig, *pos;
+	size_t key_len = strlen(key), len;
+	bool found = false;
+
+	chosen = of_find_node_by_path("/chosen");
+	if (!chosen)
+		return false;
+	if (of_property_read_string(chosen, "mmi,bootconfig", &bootconfig))
+		goto out;
+	pos = bootconfig;
+	while ((pos = strstr(pos, key))) {
+		if (pos != bootconfig && pos[-1] != ' ' && pos[-1] != '\n') {
+			pos += key_len;
+			continue;
+		}
+		pos += key_len;
+		len = strcspn(pos, " \n\t");
+		if (len && len < value_len) {
+			memcpy(value, pos, len);
+			value[len] = '\0';
+			found = true;
+		}
+		break;
+	}
+out:
+	of_node_put(chosen);
+	return found;
+}
+
+static bool moto_select_bdf(char *filename, size_t filename_len,
+			    const char *base)
+{
+	char device[32], radio[32];
+	int written;
+
+	if (!moto_bootarg("androidboot.device=", device, sizeof(device)) ||
+	    !moto_bootarg("androidboot.radio=", radio, sizeof(radio)))
+		return false;
+	if (strcmp(device, "eqe"))
+		return false;
+	written = snprintf(filename, filename_len, "%s.eqe.ipa", base);
+	return written >= 0 && (size_t)written < filename_len;
+}
 
 int wlfw_msa_mem_info_send_sync_msg(struct icnss_priv *priv)
 {
@@ -1065,7 +1112,10 @@ static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 
 	switch (bdf_type) {
 	case ICNSS_BDF_ELF:
-		if (priv->board_id == 0xFF)
+		if (moto_select_bdf(filename_tmp, filename_len,
+				    ELF_BDF_FILE_NAME)) {
+			icnss_pr_dbg("%s: Using %s\n", __func__, filename_tmp);
+		} else if (priv->board_id == 0xFF)
 			snprintf(filename_tmp, filename_len, ELF_BDF_FILE_NAME);
 		else if (priv->board_id < 0xFF)
 			snprintf(filename_tmp, filename_len,
@@ -1078,7 +1128,10 @@ static int icnss_get_bdf_file_name(struct icnss_priv *priv,
 				 priv->board_id & 0xFF);
 		break;
 	case ICNSS_BDF_BIN:
-		if (priv->board_id == 0xFF)
+		if (moto_select_bdf(filename_tmp, filename_len,
+				    BIN_BDF_FILE_NAME)) {
+			icnss_pr_dbg("%s: Using %s\n", __func__, filename_tmp);
+		} else if (priv->board_id == 0xFF)
 			snprintf(filename_tmp, filename_len, BIN_BDF_FILE_NAME);
 		else if (priv->board_id >= WLAN_BOARD_ID_INDEX)
 			snprintf(filename_tmp, filename_len,
