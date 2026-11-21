@@ -92,6 +92,8 @@ struct msm_asoc_mach_data {
 	struct device_node *dmic23_gpio_p; /* used by pinctrl API */
 	struct device_node *dmic45_gpio_p; /* used by pinctrl API */
 	struct device_node *dmic67_gpio_p; /* used by pinctrl API */
+	struct device_node *dmic_micbias_gpio_p; /* used by pinctrl API */
+	int dmic_micbias_cnt;
 	struct pinctrl *usbc_en2_gpio_p; /* used by pinctrl API */
 	bool is_afe_config_done;
 	struct device_node *fsa_handle;
@@ -402,11 +404,25 @@ static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 
 	switch (event) {
 	case SND_SOC_DAPM_PRE_PMU:
+		if (pdata->dmic_micbias_gpio_p) {
+			if (!pdata->dmic_micbias_cnt) {
+				ret = msm_cdc_pinctrl_select_active_state(
+							pdata->dmic_micbias_gpio_p);
+				if (ret < 0)
+					return ret;
+			}
+			pdata->dmic_micbias_cnt++;
+		}
 		(*dmic_gpio_cnt)++;
 		if (*dmic_gpio_cnt == 1) {
 			ret = msm_cdc_pinctrl_select_active_state(
 						dmic_gpio);
 			if (ret < 0) {
+				(*dmic_gpio_cnt)--;
+				if (pdata->dmic_micbias_gpio_p &&
+				    !--pdata->dmic_micbias_cnt)
+					msm_cdc_pinctrl_select_sleep_state(
+						pdata->dmic_micbias_gpio_p);
 				pr_err_ratelimited("%s: gpio set cannot be activated %sd",
 					__func__, "dmic_gpio");
 				return ret;
@@ -420,10 +436,19 @@ static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 			ret = msm_cdc_pinctrl_select_sleep_state(
 					dmic_gpio);
 			if (ret < 0) {
+				(*dmic_gpio_cnt)++;
 				pr_err_ratelimited("%s: gpio set cannot be de-activated %sd",
 					__func__, "dmic_gpio");
 				return ret;
 			}
+		}
+		if (pdata->dmic_micbias_gpio_p &&
+		    pdata->dmic_micbias_cnt > 0 &&
+		    !--pdata->dmic_micbias_cnt) {
+			ret = msm_cdc_pinctrl_select_sleep_state(
+					pdata->dmic_micbias_gpio_p);
+			if (ret < 0)
+				return ret;
 		}
 		break;
 	default:
@@ -2738,6 +2763,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	pdata->dmic67_gpio_p = of_parse_phandle(pdev->dev.of_node,
 					      "qcom,cdc-dmic67-gpios",
 					       0);
+	pdata->dmic_micbias_gpio_p = of_parse_phandle(pdev->dev.of_node,
+						  "qcom,dmic-micbias-en-gpio",
+						   0);
 	if (pdata->dmic01_gpio_p)
 		msm_cdc_pinctrl_set_wakeup_capable(pdata->dmic01_gpio_p, false);
 	if (pdata->dmic23_gpio_p)
@@ -2746,6 +2774,8 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		msm_cdc_pinctrl_set_wakeup_capable(pdata->dmic45_gpio_p, false);
 	if (pdata->dmic67_gpio_p)
 		msm_cdc_pinctrl_set_wakeup_capable(pdata->dmic67_gpio_p, false);
+	if (pdata->dmic_micbias_gpio_p)
+		msm_cdc_pinctrl_set_wakeup_capable(pdata->dmic_micbias_gpio_p, false);
 
 	msm_common_snd_init(pdev, card);
 
@@ -2774,6 +2804,7 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 
 	return 0;
 err:
+	of_node_put(pdata->dmic_micbias_gpio_p);
 	devm_kfree(&pdev->dev, pdata);
 	return ret;
 }
@@ -2789,10 +2820,11 @@ static int msm_asoc_machine_remove(struct platform_device *pdev)
 
 	if (pdata)
 		common_pdata = pdata->common_pdata;
-
 	msm_common_snd_deinit(common_pdata);
 	snd_event_master_deregister(&pdev->dev);
 	snd_soc_unregister_card(card);
+	if (pdata)
+		of_node_put(pdata->dmic_micbias_gpio_p);
 
 	return 0;
 }

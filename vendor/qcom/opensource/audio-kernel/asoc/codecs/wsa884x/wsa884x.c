@@ -845,9 +845,9 @@ static int wsa_dev_mode_put(struct snd_kcontrol *kcontrol,
 }
 
 static const char * const wsa_pa_gain_text[] = {
-	"G_21_DB", "G_19P5_DB" "G_18_DB", "G_16P5_DB", "G_15_DB", "G_13P5_DB",
+	"G_21_DB", "G_19P5_DB", "G_18_DB", "G_16P5_DB", "G_15_DB", "G_13P5_DB",
 	"G_12_DB", "G_10P5_DB", "G_9_DB", "G_7P5_DB", "G_6_DB", "G_4P5_DB",
-	"G_3_DB", "G_1P5_DB", "G_0_DB", "G_M1P5_DB", "G_M3_DB", "G_M4P5_DB"
+	"G_3_DB", "G_1P5_DB", "G_0_DB", "G_M1P5_DB", "G_M3_DB", "G_M4P5_DB",
 	"G_M6_DB", "G_M7P5_DB", "G_M9_DB"
 };
 
@@ -880,7 +880,11 @@ static int wsa_pa_gain_put(struct snd_kcontrol *kcontrol,
 		__func__, ucontrol->value.integer.value[0]);
 
 	wsa884x->pa_gain =  ucontrol->value.integer.value[0];
-
+	if (!wsa884x->comp_enable) {
+		dev_dbg(component->dev, "%s: comp disable, dynamically set pa gain\n",__func__);
+		snd_soc_component_update_bits(component,
+			REG_FIELD_VALUE(DRE_CTL_1, CSR_GAIN, wsa884x->pa_gain));
+	}
 	return 0;
 }
 
@@ -1539,6 +1543,10 @@ static void wsa884x_codec_init(struct snd_soc_component *component)
 		snd_soc_component_update_bits(component, reg_init[i].reg,
 					reg_init[i].mask, reg_init[i].val);
 
+	if (wsa884x->boost_voltage_11v)
+		snd_soc_component_update_bits(component,
+					REG_FIELD_VALUE(CLSH_SOFT_MAX, SOFT_MAX, 0x8C));
+
 	/* Register updates for 2S battery configuration */
 	if (wsa884x->bat_cfg == CONFIG_2S) {
 		for (i = 0; i < ARRAY_SIZE(reg_init_2S); i++)
@@ -1643,6 +1651,10 @@ static int wsa884x_get_temperature(struct snd_soc_component *component,
 					   __func__, reg.d1_msb, reg.d1_lsb, reg.d2_msb,
 					   reg.d2_lsb);
 		}
+
+		pr_info("%s: Temperature registers are [%d %d %d %d] and dmeas is %d, %d\n",
+			__func__, reg.d1_msb, reg.d1_lsb, reg.d2_msb,
+			reg.d2_lsb, reg.dmeas_msb, reg.dmeas_lsb);
 		dmeas = ((reg.dmeas_msb << 0x8) | reg.dmeas_lsb) >> 0x6;
 		d1 = ((reg.d1_msb << 0x8) | reg.d1_lsb) >> 0x6;
 		d2 = ((reg.d2_msb << 0x8) | reg.d2_lsb) >> 0x6;
@@ -1666,7 +1678,7 @@ static int wsa884x_get_temperature(struct snd_soc_component *component,
 	wsa884x->curr_temp = temp_val;
 	if (temp)
 		*temp = temp_val;
-	pr_debug("%s: t0 measured: %d dmeas = %d, d1 = %d, d2 = %d\n",
+	pr_info("%s: t0 measured: %d dmeas = %d, d1 = %d, d2 = %d\n",
 		  __func__, temp_val, dmeas, d1, d2);
 
 	return ret;
@@ -2016,6 +2028,11 @@ static int wsa884x_swr_probe(struct swr_device *pdev)
 		ret = -EPROBE_DEFER;
 		goto err;
 	}
+
+	wsa884x->boost_voltage_11v = of_property_read_bool(pdev->dev.of_node,
+				"qcom,boost_voltage_11v");
+	dev_info(&pdev->dev,
+		"%s: boost_voltage_11v: %d\n", __func__, wsa884x->boost_voltage_11v);
 
 	wsa884x->wsa_rst_np = of_parse_phandle(pdev->dev.of_node,
 					     "qcom,spkr-sd-n-node", 0);
