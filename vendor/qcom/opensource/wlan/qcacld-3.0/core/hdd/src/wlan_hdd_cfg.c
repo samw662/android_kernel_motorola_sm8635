@@ -54,6 +54,83 @@
 #include "wlan_dp_ucfg_api.h"
 #include "wlan_cmn.h"
 
+#ifdef MOTO_UTAGS_MAC
+#include <linux/ctype.h>
+#include <linux/etherdevice.h>
+#include <linux/of.h>
+#include <linux/slab.h>
+#include <crypto/md5.h>
+#include <crypto/hash.h>
+
+#define WIFI_MAC_BOOTARG "wifimacaddr="
+#define DEVICE_SERIALNO_BOOTARG "androidboot.serialno="
+
+QDF_STATUS hdd_generate_random_mac_from_serialno(const char *serial,
+					   int serial_len, char *mac)
+{
+	struct crypto_shash *tfm;
+	struct shash_desc *desc;
+	u8 digest[MD5_DIGEST_SIZE];
+	int ret;
+
+	if (!serial || serial_len <= 0 || !mac)
+		return QDF_STATUS_E_INVAL;
+	tfm = crypto_alloc_shash("md5", 0, 0);
+	if (IS_ERR(tfm))
+		return QDF_STATUS_E_FAILURE;
+	desc = kmalloc(sizeof(*desc) + crypto_shash_descsize(tfm), GFP_KERNEL);
+	if (!desc) {
+		crypto_free_shash(tfm);
+		return QDF_STATUS_E_NOMEM;
+	}
+	desc->tfm = tfm;
+	ret = crypto_shash_digest(desc, serial, serial_len, digest);
+	kfree(desc);
+	crypto_free_shash(tfm);
+	if (ret)
+		return QDF_STATUS_E_FAILURE;
+	mac[0] = 0x38;
+	mac[1] = 0x80;
+	mac[2] = 0xdf;
+	memcpy(mac + 3, digest, 3);
+	return QDF_STATUS_SUCCESS;
+}
+
+QDF_STATUS hdd_update_mac_serial(struct hdd_context *hdd_ctx)
+{
+	struct device_node *chosen;
+	const char *bootargs, *serial;
+	tSirMacAddr mac;
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	size_t len;
+
+	chosen = of_find_node_by_path("/chosen");
+	if (!chosen)
+		return status;
+	if (of_property_read_string(chosen, "bootargs", &bootargs))
+		goto out;
+	serial = strstr(bootargs, DEVICE_SERIALNO_BOOTARG);
+	if (!serial)
+		goto out;
+	serial += strlen(DEVICE_SERIALNO_BOOTARG);
+	len = strcspn(serial, " \n\t");
+	if (!len || len > 128)
+		goto out;
+	status = hdd_generate_random_mac_from_serialno(serial, len, mac);
+	if (QDF_IS_STATUS_ERROR(status))
+		goto out;
+	status = sme_set_custom_mac_addr(mac);
+	if (QDF_IS_STATUS_ERROR(status))
+		goto out;
+	memcpy(hdd_ctx->provisioned_mac_addr[0].bytes, mac, sizeof(mac));
+	hdd_ctx->num_provisioned_addr = 1;
+	hdd_populate_random_mac_addr(hdd_ctx, QDF_MAX_CONCURRENCY_PERSONA - 1);
+out:
+	of_node_put(chosen);
+	return status;
+}
+#endif
+
 #ifndef WLAN_MAC_ADDR_UPDATE_DISABLE
 /**
  * get_next_line() - find and locate the new line pointer
@@ -332,6 +409,49 @@ QDF_STATUS hdd_update_mac_config(struct hdd_context *hdd_ctx)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
+#endif
+
+#ifdef MOTO_UTAGS_MAC
+QDF_STATUS hdd_update_mac_utag(struct hdd_context *hdd_ctx)
+{
+	struct device_node *chosen;
+	const char *bootargs, *value;
+	char hex[QDF_MAC_ADDR_SIZE * 2 + 1];
+	tSirMacAddr mac;
+	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+	size_t i, count = 0, len;
+
+	chosen = of_find_node_by_path("/chosen");
+	if (!chosen)
+		return status;
+	if (of_property_read_string(chosen, "bootargs", &bootargs))
+		goto out;
+	value = strstr(bootargs, WIFI_MAC_BOOTARG);
+	if (!value)
+		goto out;
+	value += strlen(WIFI_MAC_BOOTARG);
+	len = strcspn(value, " \n\t");
+	for (i = 0; i < len; i++) {
+		if (value[i] == ':' || value[i] == ',')
+			continue;
+		if (!isxdigit(value[i]) || count == sizeof(hex) - 1)
+			goto out;
+		hex[count++] = value[i];
+	}
+	if (count != sizeof(hex) - 1 || hex2bin(mac, hex, sizeof(mac)) ||
+	    is_zero_ether_addr(mac) || is_multicast_ether_addr(mac))
+		goto out;
+	status = sme_set_custom_mac_addr(mac);
+	if (QDF_IS_STATUS_ERROR(status))
+		goto out;
+	memcpy(hdd_ctx->provisioned_mac_addr[0].bytes, mac, sizeof(mac));
+	hdd_ctx->num_provisioned_addr = 1;
+	hdd_populate_random_mac_addr(hdd_ctx, QDF_MAX_CONCURRENCY_PERSONA - 1);
+out:
+	of_node_put(chosen);
+	return status;
+}
+
 #endif
 
 /**

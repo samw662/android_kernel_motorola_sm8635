@@ -2294,6 +2294,10 @@
 #define WE_SET_TXRX_STATS    24
 
 
+/* for moto SAR features, support tx pwr limit settings on mimo device */
+#define WE_SET_MIMO_TX_POWER 32
+#define WE_SET_MIMO_TX_POWER_DBS 33
+
 #ifdef FEATURE_WLAN_TDLS
 #undef  MAX_VAR_ARGS
 #define MAX_VAR_ARGS         11
@@ -6684,6 +6688,61 @@ static QDF_STATUS hdd_send_thermal_mgmt_cmd(mac_handle_t mac_handle,
  *
  * Return: 0 on success, non-zero on error
  */
+#ifdef FEATURE_SAR_LIMITS
+static int hdd_moto_set_sar(struct hdd_context *hdd_ctx, int command,
+			    int num_args, const int *args)
+{
+	struct sar_limit_cmd_params *params;
+	struct sar_limit_cmd_row *rows;
+	QDF_STATUS status;
+	int count, i;
+
+	count = command == WE_SET_MIMO_TX_POWER ? 4 : 2;
+	if (!hdd_ctx->mac_handle || !args ||
+	    num_args != (command == WE_SET_MIMO_TX_POWER ? 4 : 1))
+		return -EINVAL;
+	for (i = 0; i < num_args; i++)
+		if (args[i] < 0 || args[i] > 255)
+			return -EINVAL;
+	params = qdf_mem_malloc(sizeof(*params));
+	if (!params)
+		return -ENOMEM;
+	rows = qdf_mem_malloc(sizeof(*rows) * count);
+	if (!rows) {
+		qdf_mem_free(params);
+		return -ENOMEM;
+	}
+	qdf_mem_zero(params, sizeof(*params));
+	qdf_mem_zero(rows, sizeof(*rows) * count);
+	params->commit_limits = 1;
+	params->sar_enable = command == WE_SET_MIMO_TX_POWER ?
+		WMI_SAR_FEATURE_ON_USER_DEFINED : WMI_SAR_FEATURE_ON_SAR_V3;
+	params->num_limit_rows = count;
+	params->sar_limit_row_list = rows;
+	for (i = 0; i < count; i++) {
+		rows[i].chain_id = i & 1;
+		rows[i].limit_value = command == WE_SET_MIMO_TX_POWER ?
+			args[i] : args[0];
+		rows[i].validity_bitmap = WMI_SAR_CHAIN_ID_VALID_MASK;
+		if (command == WE_SET_MIMO_TX_POWER) {
+			rows[i].band_id = i < 2 ? WMI_SAR_2G_ID : WMI_SAR_5G_ID;
+			rows[i].mod_id = WMI_SAR_MOD_OFDM;
+			rows[i].validity_bitmap |= WMI_SAR_BAND_ID_VALID_MASK;
+			if (i >= 2)
+				rows[i].validity_bitmap |= WMI_SAR_MOD_ID_VALID_MASK;
+		}
+	}
+	status = sme_set_sar_power_limits(hdd_ctx->mac_handle, params);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		qdf_mem_free(rows);
+		qdf_mem_free(params);
+		return qdf_status_to_os_return(status);
+	}
+	hdd_store_sar_config(hdd_ctx, params);
+	return 0;
+}
+#endif
+
 static int __iw_set_var_ints_getnone(struct net_device *dev,
 				     struct iw_request_info *info,
 				     union iwreq_data *wrqu, char *extra)
@@ -7037,6 +7096,14 @@ static int __iw_set_var_ints_getnone(struct net_device *dev,
 		break;
 	}
 #endif /* FW_THERMAL_THROTTLE_SUPPORT */
+
+#ifdef FEATURE_SAR_LIMITS
+	case WE_SET_MIMO_TX_POWER:
+	case WE_SET_MIMO_TX_POWER_DBS:
+		ret = hdd_moto_set_sar(hdd_ctx, sub_cmd, num_args, apps_args);
+		break;
+#endif
+
 	default:
 	{
 		hdd_err("Invalid IOCTL command %d", sub_cmd);
@@ -9641,6 +9708,17 @@ static const struct iw_priv_args we_private_args[] = {
 	 IW_PRIV_TYPE_INT | MAX_VAR_ARGS,
 	 0,
 	 "ch_avoid"},
+#endif
+#ifdef FEATURE_SAR_LIMITS
+	/* for moto SAR features, support tx pwr limit settings on mimo device */
+	{WE_SET_MIMO_TX_POWER,
+	 IW_PRIV_TYPE_INT | MAX_VAR_ARGS,
+	 0,
+	 "setTxPowerM"},
+	{WE_SET_MIMO_TX_POWER_DBS,
+	 IW_PRIV_TYPE_INT | MAX_VAR_ARGS,
+	 0,
+	 "setTxPowerMDbs"},
 #endif
 	/* handlers for main ioctl */
 	{WLAN_PRIV_FIPS_TEST,

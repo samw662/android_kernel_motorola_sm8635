@@ -34,6 +34,8 @@
 #include <linux/etherdevice.h>
 #include <linux/firmware.h>
 #include <linux/kernel.h>
+#include <linux/of.h>
+#include <linux/string.h>
 #include <wlan_hdd_tx_rx.h>
 #include <wni_api.h>
 #include <wlan_hdd_cfg.h>
@@ -14675,6 +14677,31 @@ static inline QDF_STATUS hdd_cfg_parse_connection_roaming_cfg(void)
 }
 #endif
 
+#ifdef MSM_PLATFORM
+static bool hdd_moto_radio_is_prc(void)
+{
+	struct device_node *chosen;
+	const char *bootconfig, *radio;
+	bool is_prc = false;
+
+	chosen = of_find_node_by_path("/chosen");
+	if (!chosen)
+		return false;
+	if (of_property_read_string(chosen, "mmi,bootconfig", &bootconfig))
+		goto out;
+	radio = strstr(bootconfig, "androidboot.radio=");
+	if (!radio)
+		goto out;
+	radio += strlen("androidboot.radio=");
+	is_prc = !strncmp(radio, "PRC", 3) &&
+		(radio[3] == '\0' || radio[3] == ' ' || radio[3] == '\n');
+out:
+	of_node_put(chosen);
+	return is_prc;
+}
+#endif
+
+
 struct hdd_context *hdd_context_create(struct device *dev)
 {
 	QDF_STATUS status;
@@ -14717,6 +14744,14 @@ struct hdd_context *hdd_context_create(struct device *dev)
 		ret = qdf_status_to_os_return(status);
 		goto err_free_config;
 	}
+
+#ifdef MSM_PLATFORM
+	if (hdd_moto_radio_is_prc()) {
+		status = cfg_parse(WLAN_PRC_INI_FILE);
+		if (QDF_IS_STATUS_ERROR(status))
+			hdd_warn("Failed to parse %s", WLAN_PRC_INI_FILE);
+	}
+#endif
 
 	status = hdd_cfg_parse_connection_roaming_cfg();
 
@@ -15831,6 +15866,16 @@ static int hdd_initialize_mac_address(struct hdd_context *hdd_ctx)
 		hdd_info("using MAC address from wlan_mac.bin");
 		return 0;
 	}
+
+#ifdef MOTO_UTAGS_MAC
+	status = hdd_update_mac_utag(hdd_ctx);
+	if (QDF_IS_STATUS_SUCCESS(status))
+		return 0;
+
+	status = hdd_update_mac_serial(hdd_ctx);
+	if (QDF_IS_STATUS_SUCCESS(status))
+		return 0;
+#endif
 
 	hdd_info("using default MAC address");
 
