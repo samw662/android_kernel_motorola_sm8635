@@ -153,6 +153,16 @@ ifeq ($(CONFIG_ARCH_SM6150),y)
 dtbo-y += qcs610-icnss.dtbo
 endif
 
+dtbo-$(CONFIG_ARCF_DTB) += pineapple-kiwi-cnss-arcf-evt1a.dtbo
+dtbo-$(CONFIG_CTWOV_DTB) += pineapple-kiwi-cnss-ctwov-evb.dtbo
+dtbo-$(CONFIG_ARCFOX_DTB) += cliffs-kiwi-cnss-arcfox-evt3.dtbo cliffs-kiwi-cnss-arcfox-dvt1c.dtbo
+dtbo-$(CONFIG_CTWO_DTB) += cliffs-kiwi-cnss-ctwo-evb3.dtbo cliffs-kiwi-cnss-ctwo-dvt1b.dtbo
+
+ifeq ($(CONFIG_ARCH_SUN),y)
+dtbo-y += sun-kiwi-cnss.dtbo sun-kiwi-cnss-v8.dtbo
+dtbo-y += sun-peach-cnss.dtbo sun-peach-cnss-v8.dtbo
+endif
+
 always-y	:= $(dtb-y) $(dtbo-y)
 subdir-y	:= $(dts-dirs)
 clean-files	:= *.dtb *.dtbo
