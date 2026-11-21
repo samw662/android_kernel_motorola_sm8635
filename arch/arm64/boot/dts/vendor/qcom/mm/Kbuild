@@ -29,6 +29,9 @@ ifeq ($(CONFIG_ARCH_KALAMA), y)
 		kalama-mm-atp-overlay.dtbo
 endif
 
+dtbo-$(CONFIG_ARCF_DTB) += pineapple-mm-arcf-evt1a-overlay.dtbo
+dtbo-$(CONFIG_CTWOV_DTB) += pineapple-mm-ctwov-evb-overlay.dtbo
+
 always-y    := $(dtb-y) $(dtbo-y)
 subdir-y    := $(dts-dirs)
 clean-files    := *.dtb *.dtbo
