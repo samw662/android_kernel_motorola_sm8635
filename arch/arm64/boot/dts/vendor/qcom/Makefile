@@ -762,25 +762,41 @@ sdmsteppeauto-overlays-dtb-$(CONFIG_ARCH_SA6155) += $(SA6155_BOARDS) $(SA6155P_B
 
 dtb-y += $(sdmsteppeauto-dtb-y)
 
-ctwo-dtbs := cliffs-ctwo-base.dtb cliffs-arcfox-base.dtb \
-	      pineapple-arcf-base.dtb pineapple-v2-arcf-base.dtb \
-	      pineapple-ctwov-base.dtb pineapple-v2-ctwov-base.dtb
+ctwo-dtbs := cliffs-ctwo-base.dtb
 ctwo-dtbos := cliffs-ctwo-evb3-overlay.dtbo \
-	      cliffs-ctwo-dvt1-overlay.dtbo \
-	      cliffs-ctwo-dvt1b-overlay.dtbo \
-	      cliffs-arcfox-evt3-overlay.dtbo \
-	      cliffs-arcfox-dvt1b-overlay.dtbo \
-	      cliffs-arcfox-dvt1c-overlay.dtbo \
-	      cliffs-arcfox-jp-evt-overlay.dtbo \
-	      pineapple-arcf-evt1a-overlay.dtbo \
-	      pineapple-arcf-evt2-overlay.dtbo \
-	      pineapple-ctwov-evb-overlay.dtbo
+	cliffs-ctwo-dvt1-overlay.dtbo cliffs-ctwo-dvt1b-overlay.dtbo
+arcfox-dtbs := cliffs-arcfox-base.dtb
+arcfox-dtbos := cliffs-arcfox-evt3-overlay.dtbo \
+	cliffs-arcfox-dvt1b-overlay.dtbo cliffs-arcfox-dvt1c-overlay.dtbo \
+	cliffs-arcfox-jp-evt-overlay.dtbo
+arcf-dtbs := pineapple-arcf-base.dtb pineapple-v2-arcf-base.dtb
+arcf-dtbos := pineapple-arcf-evt1a-overlay.dtbo pineapple-arcf-evt2-overlay.dtbo
+ctwov-dtbs := pineapple-ctwov-base.dtb pineapple-v2-ctwov-base.dtb
+ctwov-dtbos := pineapple-ctwov-evb-overlay.dtbo
 
 ifeq ($(CONFIG_CTWO_DTB),y)
 dtb-y += $(call add-overlays,$(ctwo-dtbos),$(ctwo-dtbs))
 dtbo-y += $(ctwo-dtbos)
 pineapple-overlays-dtb-y += $(ctwo-dtbs) $(ctwo-dtbos) \
-			   display/cliffs-sde-display-ctwo-evb3-overlay.dtbo
+	display/cliffs-sde-display-ctwo-evb3-overlay.dtbo
+endif
+ifeq ($(CONFIG_ARCFOX_DTB),y)
+dtb-y += $(call add-overlays,$(arcfox-dtbos),$(arcfox-dtbs))
+dtbo-y += $(arcfox-dtbos)
+pineapple-overlays-dtb-y += $(arcfox-dtbs) $(arcfox-dtbos) \
+	display/cliffs-sde-display-arcfox-evt3-overlay.dtbo
+endif
+ifeq ($(CONFIG_ARCF_DTB),y)
+dtb-y += $(call add-overlays,$(arcf-dtbos),$(arcf-dtbs))
+dtbo-y += $(arcf-dtbos)
+pineapple-overlays-dtb-y += $(arcf-dtbs) $(arcf-dtbos) \
+	display/pineapple-sde-display-arcf-evt1a-overlay.dtbo
+endif
+ifeq ($(CONFIG_CTWOV_DTB),y)
+dtb-y += $(call add-overlays,$(ctwov-dtbos),$(ctwov-dtbs))
+dtbo-y += $(ctwov-dtbos)
+pineapple-overlays-dtb-y += $(ctwov-dtbs) $(ctwov-dtbos) \
+	display/pineapple-sde-display-ctwov-evb-overlay.dtbo
 endif
 
 always-y        := $(dtb-y) $(dtbo-y)

@@ -317,6 +317,22 @@ config ARCH_CLIFFS
 	  chipset. If you do not wish to build a kernel that runs on this
 	  chipset or if you are unsure, say 'N' here.
 
+config CTWO_DTB
+	bool "Motorola ctwo device trees"
+	depends on ARCH_CLIFFS
+
+config ARCFOX_DTB
+	bool "Motorola arcfox device trees"
+	depends on ARCH_CLIFFS
+
+config ARCF_DTB
+	bool "Motorola arcf device trees"
+	depends on ARCH_PINEAPPLE
+
+config CTWOV_DTB
+	bool "Motorola ctwov device trees"
+	depends on ARCH_PINEAPPLE
+
 config ARCH_KALAMA
 	bool "Enable Support for Qualcomm Technologies, Inc. KALAMA"
 	depends on ARCH_QCOM

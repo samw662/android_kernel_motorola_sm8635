@@ -16,8 +16,8 @@ dtbo-$(CONFIG_ARCH_VOLCANO)     += volcano-camera-sensor-mtp.dtbo
 dtbo-$(CONFIG_ARCH_VOLCANO)     += volcano-camera-sensor-idp.dtbo
 dtbo-$(CONFIG_ARCH_VOLCANO)     += volcano-camera-sensor-qrd.dtbo
 
-dtbo-$(CONFIG_CTWO_DTB) += cliffs-camera-sensor-ctwo-evb3.dtbo \
-	cliffs-camera-sensor-arcfox-evt3.dtbo \
-	cliffs-camera-sensor-arcfox-dvt1b.dtbo \
-	pineapple-camera-sensor-arcf-evt1a.dtbo \
-	pineapple-camera-sensor-ctwov-evb.dtbo
+dtbo-$(CONFIG_CTWO_DTB) += cliffs-camera-sensor-ctwo-evb3.dtbo
+dtbo-$(CONFIG_ARCFOX_DTB) += cliffs-camera-sensor-arcfox-evt3.dtbo \
+	cliffs-camera-sensor-arcfox-dvt1b.dtbo
+dtbo-$(CONFIG_ARCF_DTB) += pineapple-camera-sensor-arcf-evt1a.dtbo
+dtbo-$(CONFIG_CTWOV_DTB) += pineapple-camera-sensor-ctwov-evb.dtbo
