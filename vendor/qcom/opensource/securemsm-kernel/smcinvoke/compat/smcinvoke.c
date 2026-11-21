@@ -19,6 +19,7 @@
 #include <linux/dma-buf.h>
 #include <linux/delay.h>
 #include <linux/kref.h>
+#include <linux/xarray.h>
 #include <linux/signal.h>
 #include <linux/msm_ion.h>
 #include <linux/mem-buf.h>
@@ -330,6 +331,7 @@ struct smcinvoke_server_info {
 	DECLARE_HASHTABLE(responses_table, 4);
 	struct hlist_node hash;
 	struct list_head pending_cbobjs;
+	struct xarray suspended_accepts;
 };
 
 struct smcinvoke_cbobj {
@@ -420,6 +422,7 @@ static void destroy_cb_server(struct kref *kref)
 			struct smcinvoke_server_info, ref_cnt);
 	if (server) {
 		hash_del(&server->hash);
+		xa_destroy(&server->suspended_accepts);
 		kfree(server);
 	}
 }
@@ -1779,7 +1782,8 @@ static void process_tzcb_req(void *buf, size_t buf_len, struct file **arr_filp)
 		 * should wait infinitely for the accept thread to come back with
 		 * response.
 		 */
-		if (freezing(current)) {
+		if (freezing(current) ||
+		    !xa_empty(&srvr_info->suspended_accepts)) {
 			cbobj_retries = 0;
 		} else {
 			cbobj_retries++;
@@ -2583,6 +2587,7 @@ static long process_server_req(struct file *filp, unsigned int cmd,
 	hash_init(server_info->reqs_table);
 	hash_init(server_info->responses_table);
 	INIT_LIST_HEAD(&server_info->pending_cbobjs);
+	xa_init(&server_info->suspended_accepts);
 
 	mutex_lock(&g_smcinvoke_lock);
 
@@ -2646,6 +2651,7 @@ static long process_accept_req(struct file *filp, unsigned int cmd,
 	if (server_info->state == SMCINVOKE_SERVER_STATE_DEFUNCT)
 		server_info->state = 0;
 
+	xa_erase(&server_info->suspended_accepts, current->pid);
 	mutex_unlock(&g_smcinvoke_lock);
 
 	/* First check if it has response otherwise wait for req */
@@ -2710,7 +2716,13 @@ start_waiting_for_requests:
 			 */
 			mutex_lock(&g_smcinvoke_lock);
 
-			if(freezing(current)) {
+			if (freezing(current)) {
+				void *entry;
+
+				entry = xa_store(&server_info->suspended_accepts,
+					current->pid, xa_mk_value(1), GFP_KERNEL);
+				if (xa_is_err(entry))
+					server_info->state = SMCINVOKE_SERVER_STATE_DEFUNCT;
 				smci_err_ratelimited("Server id :%d interrupted probaby due to suspend, pid:%d\n",
 					server_info->server_id, current->pid);
 			} else {
