@@ -29,6 +29,11 @@ dtbo-y += volcano6ip-ese.dtbo
 dtbo-y += volcano6i-stsafe-ese.dtbo
 endif
 
+dtbo-$(CONFIG_ARCF_DTB) += pineapple-ese-arcf-evt1a.dtbo
+dtbo-$(CONFIG_CTWOV_DTB) += pineapple-ese-ctwov-evb.dtbo
+dtbo-$(CONFIG_ARCFOX_DTB) += pineapple-ese-arcfox-evt3.dtbo
+dtbo-$(CONFIG_CTWO_DTB) += pineapple-ese-ctwo-evb3.dtbo
+
 always-y	:= $(dtb-y) $(dtbo-y)
 subdir-y	:= $(dts-dirs)
 clean-files	:= *.dtb *.dtbo
