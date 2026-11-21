@@ -17,6 +17,8 @@ else
 LINUXINCLUDE += -I$(MMRM_ROOT)/vm/common/inc/
 
 obj-m += vm/fe/
-#obj-y += vm/fe/vm_test/
+ifeq ($(CONFIG_ARCH_KALAMA),y)
+obj-$(CONFIG_MMRM_VM_TEST) += vm/fe/vm_test/
+endif
 
 endif
