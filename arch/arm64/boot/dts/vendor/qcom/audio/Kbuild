@@ -116,6 +116,11 @@ dtbo-y += blair-audio.dtbo \
 		blair-audio-cdp.dtbo
 endif
 
- always-y    := $(dtb-y) $(dtbo-y)
+ dtbo-$(CONFIG_ARCF_DTB) += pineapple-audio-moto-arcf-evt1a.dtbo
+dtbo-$(CONFIG_CTWOV_DTB) += pineapple-audio-moto-ctwov-evb.dtbo
+dtbo-$(CONFIG_ARCFOX_DTB) += cliffs-audio-moto-arcfox-evt3.dtbo
+dtbo-$(CONFIG_CTWO_DTB) += cliffs-audio-moto-ctwo-evb3.dtbo
+
+always-y    := $(dtb-y) $(dtbo-y)
  subdir-y    := $(dts-dirs)
  clean-files    := *.dtb *.dtbo
