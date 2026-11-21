@@ -59,6 +59,11 @@ ifeq ($(CONFIG_ARCH_SERAPH),y)
 dtbo-y += seraph-bt.dtbo
 endif
 
+dtbo-$(CONFIG_ARCF_DTB) += pineapple-kiwi-bt-arcf-evt1a.dtbo
+dtbo-$(CONFIG_CTWOV_DTB) += pineapple-kiwi-bt-ctwov-evb.dtbo
+dtbo-$(CONFIG_ARCFOX_DTB) += cliffs-kiwi-bt-arcfox-evt3.dtbo
+dtbo-$(CONFIG_CTWO_DTB) += cliffs-kiwi-bt-ctwo-evb3.dtbo
+
 always-y        := $(dtb-y) $(dtbo-y)
 subdir-y        := $(dts-dirs)
 clean-files     := *.dtb *.dtbo
