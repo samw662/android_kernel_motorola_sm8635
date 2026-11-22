@@ -1616,11 +1616,12 @@ void __dsp_cvp_power_req(struct cvp_dsp_cmd_msg *cmd)
 		dsp2cpu_cmd->session_cpu_low,
 		dsp2cpu_cmd->session_cpu_high);
 
-	inst = (struct msm_cvp_inst *)get_inst_from_dsp(
+	inst = cvp_get_inst(cvp_driver->cvp_core, get_inst_from_dsp(
 			dsp2cpu_cmd->session_cpu_high,
-			dsp2cpu_cmd->session_cpu_low);
+			dsp2cpu_cmd->session_cpu_low));
 
 	if (!inst) {
+		dprintk(CVP_ERR, "%s incorrect session ID %llx\n", __func__, inst);
 		cmd->ret = -1;
 		goto dsp_fail_power_req;
 	}
@@ -1655,6 +1656,8 @@ void __dsp_cvp_power_req(struct cvp_dsp_cmd_msg *cmd)
 
 	dprintk(CVP_DSP, "%s DSP2CPU_POWER_REQUEST Done\n", __func__);
 dsp_fail_power_req:
+	if (inst)
+		cvp_put_inst(inst);
 	return;
 }
 

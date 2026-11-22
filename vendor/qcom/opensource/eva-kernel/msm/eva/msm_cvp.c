@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2018-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
+
+#include <linux/slab.h>
 
 #include "msm_cvp.h"
 #include "cvp_hfi.h"
@@ -11,6 +13,29 @@
 #include "cvp_comm_def.h"
 #include "cvp_power.h"
 #include "cvp_hfi_api.h"
+
+static void cvp_unmap_failed_persist(struct msm_cvp_inst *inst,
+	struct eva_kmd_hfi_packet *in_pkt, unsigned int offset,
+	unsigned int buf_num, const int *fd_arr)
+{
+	struct cvp_buf_type *buf;
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < buf_num; i++) {
+		buf = (struct cvp_buf_type *)&in_pkt->pkt_data[offset];
+		if (fd_arr[i] >= 0) {
+			buf->fd = fd_arr[i];
+			ret = msm_cvp_unmap_user_persist(inst, in_pkt, offset, 1);
+			if (ret)
+				dprintk(CVP_ERR, "%s: unmap buffer %u failed: %d\n",
+					__func__, i, ret);
+			buf->fd = fd_arr[i];
+		}
+		offset += sizeof(*buf) >> 2;
+	}
+}
+
 static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 	struct eva_kmd_hfi_packet *in_pkt,
 	unsigned int in_offset,
@@ -668,6 +693,8 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 	struct cvp_hfi_cmd_session_hdr *cmd_hdr;
 	int pkt_type, rc = 0;
 	enum buf_map_type map_type;
+	int *fd_arr = NULL;
+	unsigned int i;
 
 	ops_tbl = inst->core->dev_ops;
 
@@ -684,15 +711,25 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 		cmd_hdr->client_data.transaction_id,
 		cmd_hdr->client_data.kdata & (FENCE_BIT - 1));
 
-	if (map_type == MAP_PERSIST)
-		rc = msm_cvp_map_user_persist(inst, in_pkt, in_offset, in_buf_num);
-	else if (map_type == UNMAP_PERSIST)
+	if (map_type == MAP_PERSIST) {
+		if (in_buf_num)
+			fd_arr = kmalloc_array(in_buf_num, sizeof(*fd_arr), GFP_KERNEL);
+		if (in_buf_num && !fd_arr) {
+			dprintk(CVP_ERR, "%s: fd array allocation failed\n", __func__);
+			rc = -ENOMEM;
+			goto exit;
+		}
+		for (i = 0; i < in_buf_num; i++)
+			fd_arr[i] = -1;
+		rc = msm_cvp_map_user_persist(inst, in_pkt, in_offset, in_buf_num, fd_arr);
+	} else if (map_type == UNMAP_PERSIST) {
 		rc = msm_cvp_unmap_user_persist(inst, in_pkt, in_offset, in_buf_num);
-	else
+	} else {
 		rc = msm_cvp_map_frame(inst, in_pkt, in_offset, in_buf_num);
+	}
 
 	if (rc)
-		return rc;
+		goto exit;
 
 	rc = cvp_populate_fences(in_pkt, in_offset, in_buf_num, inst);
 	if (rc == 0) {
@@ -702,9 +739,12 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 			dprintk(CVP_ERR,"%s: Failed in call_hfi_op %d, %x\n",
 					__func__, in_pkt->pkt_data[0],
 					in_pkt->pkt_data[1]);
-			if (map_type == MAP_FRAME)
-				msm_cvp_unmap_frame(inst,
-					cmd_hdr->client_data.kdata);
+			if (map_type == MAP_FRAME) {
+				msm_cvp_unmap_frame(inst, cmd_hdr->client_data.kdata);
+			} else if (map_type == MAP_PERSIST) {
+				cvp_unmap_failed_persist(inst, in_pkt, in_offset,
+					in_buf_num, fd_arr);
+			}
 		}
 	} else if (rc > 0) {
 		dprintk(CVP_SYNX, "Going fenced path\n");
@@ -712,10 +752,17 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 	} else {
 		dprintk(CVP_ERR,"%s: Failed to populate fences\n",
 			__func__);
-		if (map_type == MAP_FRAME)
+		if (map_type == MAP_FRAME) {
 			msm_cvp_unmap_frame(inst, cmd_hdr->client_data.kdata);
+		} else if (map_type == MAP_PERSIST) {
+			cvp_unmap_failed_persist(inst, in_pkt, in_offset,
+				in_buf_num, fd_arr);
+		}
 	}
 
+exit:
+	if (map_type == MAP_PERSIST)
+		kfree(fd_arr);
 	return rc;
 }
 
