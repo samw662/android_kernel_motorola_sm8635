@@ -276,7 +276,8 @@ wlan: wlan-platform b2-dataipa
 	@test -n "$(WLAN_PROFILE)" && test -f "$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0/configs/pineapple_gki_$(WLAN_PROFILE)_defconfig" || \
 	  { printf '%s\n' 'Set WLAN_PROFILE to the verified device profile' >&2; exit 1; }
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/wlan/qcacld-3.0 \
-	  MODNAME=wlan CONFIG_QCA_CLD_WLAN=m WLAN_ROOT=$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0 \
+	  MODNAME=qca_cld3_kiwi_v2 DEVNAME=kiwi_v2 DYNAMIC_SINGLE_CHIP=kiwi_v2 \
+	  CONFIG_QCA_CLD_WLAN=m CONFIG_IPA_OUT_OF_TREE=y WLAN_ROOT=$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0 \
 	  WLAN_COMMON_INC=$(KERNEL_SRC)/$(VENDOR)/wlan/qca-wifi-host-cmn \
 	  WLAN_FW_API=$(KERNEL_SRC)/$(VENDOR)/wlan/fw-api WLAN_PROFILE=$(WLAN_PROFILE) \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/dataipa/Module.symvers $(KERNEL_OUT)/$(VENDOR)/wlan/platform/Module.symvers' modules
