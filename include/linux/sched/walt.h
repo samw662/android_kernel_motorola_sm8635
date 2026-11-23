@@ -201,6 +201,8 @@ extern int set_task_boost(int boost, u64 period);
 struct rq;
 struct task_struct;
 struct binder_transaction;
+struct uclamp_se;
+enum uclamp_id;
 
 /* Scheduling callbacks run in atomic context. The last two may sleep. */
 struct msched_ops {
@@ -212,6 +214,10 @@ struct msched_ops {
 					      struct task_struct *task);
 	void (*binder_ux_type_set)(struct task_struct *task);
 	void (*queue_ux_task)(struct rq *rq, struct task_struct *task, int enqueue);
+	void (*rtmutex_prepare_setprio)(struct task_struct *p, struct task_struct *donor);
+	void (*uclamp_eff_get)(struct task_struct *p, enum uclamp_id id,
+			       struct uclamp_se *limit, struct uclamp_se *effective, int *ret);
+	void (*sched_fork_init)(struct task_struct *p);
 	int (*validate_mask)(int mask);
 	void (*mask_changed)(int old_mask, int new_mask);
 };
@@ -226,6 +232,7 @@ void sched_moto_reinc_uclamp(struct rq *rq, struct task_struct *p);
 int set_moto_sched_ops(const struct msched_ops *ops);
 int set_moto_sched_enabled(int mask);
 int get_moto_sched_enabled(void);
+bool walt_moto_uclamp_ready(void);
 #endif
 
 struct notifier_block;

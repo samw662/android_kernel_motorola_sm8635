@@ -41,7 +41,7 @@ static unsigned int msched_clamp_max(u32 clamp)
 	return clamp ? (clamp & ~MOTO_CLAMP_ACTIVE) >> 16 : SCHED_CAPACITY_SCALE;
 }
 
-static void rvh_uclamp_eff_get(void *data, struct task_struct *p,
+void msched_uclamp_eff_get(struct task_struct *p,
 			       enum uclamp_id id, struct uclamp_se *limit,
 			       struct uclamp_se *effective, int *ret)
 {
@@ -303,7 +303,8 @@ void msched_binder_unregister(void)
 
 void msched_mask_changed(int old_mask, int new_mask)
 {
-	const int dropped = (old_mask & ~new_mask) & (UX_ENABLE_BINDER | UX_ENABLE_MDPF);
+	const int dropped = (old_mask & ~new_mask) &
+		(UX_ENABLE_BINDER | UX_ENABLE_MDPF | UX_ENABLE_LOCK);
 	struct task_struct *group, *task;
 
 	if (!dropped)
@@ -320,6 +321,12 @@ void msched_mask_changed(int old_mask, int new_mask)
 			task_clr_ux_type(task, UX_TYPE_LOW_LATENCY_BINDER);
 		if (dropped & UX_ENABLE_MDPF)
 			WRITE_ONCE(mts->pi_clamp, 0);
+		if (dropped & UX_ENABLE_LOCK) {
+			task_clr_inherit_type(task);
+			mts->boost_kernel_lock_depth = 0;
+			mts->boost_kernel_start = 0;
+			task_clr_ux_type(task, UX_TYPE_KERNEL);
+		}
 		removed = msched_binder_prune(task, dropped);
 		msched_binder_update(rq, task);
 		task_rq_unlock(rq, task, &rf);
@@ -328,7 +335,7 @@ void msched_mask_changed(int old_mask, int new_mask)
 	rcu_read_unlock();
 }
 
-static void rvh_rtmutex_prepare_setprio(void *data, struct task_struct *p,
+void msched_rtmutex_prepare_setprio(struct task_struct *p,
 				       struct task_struct *pi_task)
 {
 	struct moto_task_struct *mts = get_moto_task_struct(p);
@@ -350,34 +357,18 @@ static void rvh_rtmutex_prepare_setprio(void *data, struct task_struct *p,
 	__task_rq_unlock(rq, &rf);
 }
 
-static void rvh_sched_fork_init(void *unused, struct task_struct *p) {
+void msched_sched_fork_init(struct task_struct *p) {
 	struct moto_task_struct *mts = get_moto_task_struct(p);
 	mts->binder_clamp = 0;
 	mts->pi_clamp = 0;
 	mts->binder_inherit = NULL;
 }
 
-static bool msched_uclamp_ready;
-
 int msched_validate_mask(int mask)
 {
-	if ((mask & UX_ENABLE_MDPF) && !smp_load_acquire(&msched_uclamp_ready))
+	if ((mask & UX_ENABLE_MDPF) && !IS_ENABLED(CONFIG_MOTO_ENABLE_MDPF))
+		return -EOPNOTSUPP;
+	if ((mask & UX_ENABLE_MDPF) && !walt_moto_uclamp_ready())
 		return -ENODEV;
 	return 0;
-}
-
-int msched_uclamp_register_vendor_comm_hooks(void)
-{
-	int ret;
-
-	ret = register_trace_android_rvh_rtmutex_prepare_setprio(
-		rvh_rtmutex_prepare_setprio, NULL);
-	if (!ret)
-		ret = register_trace_android_rvh_uclamp_eff_get(rvh_uclamp_eff_get, NULL);
-	if (!ret)
-		ret = register_trace_android_rvh_sched_fork_init(rvh_sched_fork_init, NULL);
-	if (!ret)
-		smp_store_release(&msched_uclamp_ready, true);
-
-	return ret;
 }

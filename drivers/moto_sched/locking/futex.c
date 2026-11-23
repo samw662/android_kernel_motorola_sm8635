@@ -424,58 +424,63 @@ static void android_vh_futex_wake_up_q_finish_handler(void *unused, int nr_wake,
 	}
 }
 
-void register_futex_vendor_hooks(void)
+int register_futex_vendor_hooks(void)
 {
-	register_trace_android_vh_do_futex(
-		android_vh_do_futex_handler,
-		NULL);
-	register_trace_android_vh_futex_wait_start(
-		android_vh_futex_wait_start_handler,
-		NULL);
-	register_trace_android_vh_futex_wait_end(
-		android_vh_futex_wait_end_handler,
-		NULL);
-	register_trace_android_vh_alter_futex_plist_add(
-		android_vh_alter_futex_plist_add_handler,
-		NULL);
-	register_trace_android_vh_futex_sleep_start(
-		android_vh_futex_sleep_start_handler,
-		NULL);
-	register_trace_android_vh_futex_wake_traverse_plist(
-		android_vh_futex_wake_traverse_plist_handler,
-		NULL);
-	register_trace_android_vh_futex_wake_this(
-		android_vh_futex_wake_this_handler,
-		NULL);
-	register_trace_android_vh_futex_wake_up_q_finish(
-		android_vh_futex_wake_up_q_finish_handler,
-		NULL);
+	int ret;
+
+	ret = register_trace_android_vh_do_futex(android_vh_do_futex_handler, NULL);
+	if (ret)
+		goto err_0;
+	ret = register_trace_android_vh_futex_wait_start(android_vh_futex_wait_start_handler, NULL);
+	if (ret)
+		goto err_1;
+	ret = register_trace_android_vh_futex_wait_end(android_vh_futex_wait_end_handler, NULL);
+	if (ret)
+		goto err_2;
+	ret = register_trace_android_vh_alter_futex_plist_add(android_vh_alter_futex_plist_add_handler, NULL);
+	if (ret)
+		goto err_3;
+	ret = register_trace_android_vh_futex_sleep_start(android_vh_futex_sleep_start_handler, NULL);
+	if (ret)
+		goto err_4;
+	ret = register_trace_android_vh_futex_wake_traverse_plist(android_vh_futex_wake_traverse_plist_handler, NULL);
+	if (ret)
+		goto err_5;
+	ret = register_trace_android_vh_futex_wake_this(android_vh_futex_wake_this_handler, NULL);
+	if (ret)
+		goto err_6;
+	ret = register_trace_android_vh_futex_wake_up_q_finish(android_vh_futex_wake_up_q_finish_handler, NULL);
+	if (ret)
+		goto err_7;
+	return 0;
+
+err_7:
+	unregister_trace_android_vh_futex_wake_this(android_vh_futex_wake_this_handler, NULL);
+err_6:
+	unregister_trace_android_vh_futex_wake_traverse_plist(android_vh_futex_wake_traverse_plist_handler, NULL);
+err_5:
+	unregister_trace_android_vh_futex_sleep_start(android_vh_futex_sleep_start_handler, NULL);
+err_4:
+	unregister_trace_android_vh_alter_futex_plist_add(android_vh_alter_futex_plist_add_handler, NULL);
+err_3:
+	unregister_trace_android_vh_futex_wait_end(android_vh_futex_wait_end_handler, NULL);
+err_2:
+	unregister_trace_android_vh_futex_wait_start(android_vh_futex_wait_start_handler, NULL);
+err_1:
+	unregister_trace_android_vh_do_futex(android_vh_do_futex_handler, NULL);
+err_0:
+	tracepoint_synchronize_unregister();
+	return ret;
 }
 
 void unregister_futex_vendor_hooks(void)
 {
-	unregister_trace_android_vh_do_futex(
-		android_vh_do_futex_handler,
-		NULL);
-	unregister_trace_android_vh_futex_wait_start(
-		android_vh_futex_wait_start_handler,
-		NULL);
-	unregister_trace_android_vh_futex_wait_end(
-		android_vh_futex_wait_end_handler,
-		NULL);
-	unregister_trace_android_vh_alter_futex_plist_add(
-		android_vh_alter_futex_plist_add_handler,
-		NULL);
-	unregister_trace_android_vh_futex_sleep_start(
-		android_vh_futex_sleep_start_handler,
-		NULL);
-	unregister_trace_android_vh_futex_wake_traverse_plist(
-		android_vh_futex_wake_traverse_plist_handler,
-		NULL);
-	unregister_trace_android_vh_futex_wake_this(
-		android_vh_futex_wake_this_handler,
-		NULL);
-	unregister_trace_android_vh_futex_wake_up_q_finish(
-		android_vh_futex_wake_up_q_finish_handler,
-		NULL);
+	unregister_trace_android_vh_futex_wake_up_q_finish(android_vh_futex_wake_up_q_finish_handler, NULL);
+	unregister_trace_android_vh_futex_wake_this(android_vh_futex_wake_this_handler, NULL);
+	unregister_trace_android_vh_futex_wake_traverse_plist(android_vh_futex_wake_traverse_plist_handler, NULL);
+	unregister_trace_android_vh_futex_sleep_start(android_vh_futex_sleep_start_handler, NULL);
+	unregister_trace_android_vh_alter_futex_plist_add(android_vh_alter_futex_plist_add_handler, NULL);
+	unregister_trace_android_vh_futex_wait_end(android_vh_futex_wait_end_handler, NULL);
+	unregister_trace_android_vh_futex_wait_start(android_vh_futex_wait_start_handler, NULL);
+	unregister_trace_android_vh_do_futex(android_vh_do_futex_handler, NULL);
 }

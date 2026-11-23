@@ -28,7 +28,6 @@ static inline void uclamp_se_set(struct uclamp_se *uc_se,
 	uc_se->user_defined = user_defined;
 }
 
-extern int msched_uclamp_register_vendor_comm_hooks(void);
 struct binder_transaction;
 void msched_binder_set(struct binder_transaction *t, struct task_struct *task, bool ux);
 void msched_binder_restore(struct binder_transaction *t, struct task_struct *task);

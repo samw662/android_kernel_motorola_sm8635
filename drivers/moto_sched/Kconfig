@@ -2,24 +2,29 @@
 
 config MOTO_FUTEX_INHERIT
     tristate "futex inherit"
+    depends on SCHED_MOTO_UNFAIR && BROKEN
     default n
     help
-      boost futex owner for the blocked ux thread.
+      Boost the futex owner for the blocked UX thread. This requires the
+      missing futex task state and synchronized holder lifetime handling.
 
 config MOTO_RWSEM_INHERIT
     tristate "rwsem inherit"
+    depends on SCHED_MOTO_UNFAIR
     default n
     help
       boost rwsem owner for the blocked ux thread.
 
 config MOTO_MUTEX_INHERIT
     tristate "mutex inherit"
+    depends on SCHED_MOTO_UNFAIR
     default n
     help
       boost mutex owner for the blocked ux thread.
 
 config MOTO_ENABLE_MDPF
     tristate "Enable moto dynamic performance feature"
+    depends on SCHED_MOTO_UNFAIR
     default n
     help
       This feature will allow the scheduler to maintain more detailed

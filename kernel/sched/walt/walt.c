@@ -28,6 +28,66 @@
 const struct msched_ops __rcu *walt_moto_ops;
 static DEFINE_MUTEX(walt_moto_lock);
 static int walt_moto_mask;
+static bool walt_moto_uclamp_hooks_ready;
+
+bool walt_moto_uclamp_ready(void)
+{
+	return READ_ONCE(walt_moto_uclamp_hooks_ready);
+}
+EXPORT_SYMBOL_GPL(walt_moto_uclamp_ready);
+
+#if IS_ENABLED(CONFIG_MOTO_ENABLE_MDPF)
+static void walt_moto_rtmutex_hook(void *unused, struct task_struct *p,
+				  struct task_struct *donor)
+{
+	const struct msched_ops *ops;
+
+	rcu_read_lock();
+	ops = rcu_dereference(walt_moto_ops);
+	if (ops && ops->rtmutex_prepare_setprio)
+		ops->rtmutex_prepare_setprio(p, donor);
+	rcu_read_unlock();
+}
+
+static void walt_moto_uclamp_hook(void *unused, struct task_struct *p,
+		enum uclamp_id id, struct uclamp_se *limit,
+		struct uclamp_se *effective, int *ret)
+{
+	const struct msched_ops *ops;
+
+	rcu_read_lock();
+	ops = rcu_dereference(walt_moto_ops);
+	if (ops && ops->uclamp_eff_get)
+		ops->uclamp_eff_get(p, id, limit, effective, ret);
+	rcu_read_unlock();
+}
+
+static void walt_moto_fork_hook(void *unused, struct task_struct *p)
+{
+	const struct msched_ops *ops;
+
+	rcu_read_lock();
+	ops = rcu_dereference(walt_moto_ops);
+	if (ops && ops->sched_fork_init)
+		ops->sched_fork_init(p);
+	rcu_read_unlock();
+}
+
+static void walt_moto_register_uclamp_hooks(void)
+{
+	int ret;
+
+	ret = register_trace_android_rvh_rtmutex_prepare_setprio(walt_moto_rtmutex_hook, NULL);
+	if (!ret)
+		ret = register_trace_android_rvh_uclamp_eff_get(walt_moto_uclamp_hook, NULL);
+	if (!ret)
+		ret = register_trace_android_rvh_sched_fork_init(walt_moto_fork_hook, NULL);
+	if (ret)
+		pr_err("walt: failed to register moto uclamp hooks: %d\n", ret);
+	else
+		WRITE_ONCE(walt_moto_uclamp_hooks_ready, true);
+}
+#endif
 
 int get_moto_sched_enabled(void)
 {
@@ -91,8 +151,11 @@ int set_moto_sched_enabled(int mask)
 				goto out;
 		}
 		ret = stop_machine(walt_moto_switch, &mask, NULL);
-		if (!ret && ops && ops->mask_changed)
+		if (!ret && ops && ops->mask_changed) {
+			/* Drain callbacks that observed the previous mask. */
+			synchronize_rcu();
 			ops->mask_changed(old_mask, mask);
+		}
 	}
 out:
 	mutex_unlock(&walt_moto_lock);
@@ -5603,6 +5666,9 @@ static void walt_init(struct work_struct *work)
 	walt_init_tg_pointers();
 
 	register_walt_hooks();
+#if IS_ENABLED(CONFIG_SCHED_MOTO_UNFAIR) && IS_ENABLED(CONFIG_MOTO_ENABLE_MDPF)
+	walt_moto_register_uclamp_hooks();
+#endif
 	walt_fixup_init();
 	walt_lb_init();
 	walt_rt_init();

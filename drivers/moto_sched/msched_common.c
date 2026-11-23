@@ -128,10 +128,10 @@ void task_ux_type_set(int pid, int ux_type) {
 #endif
 		}
 		task_add_ux_type(ux_task, ux_type);
-		put_task_struct(ux_task);
 
 		cond_trace_printk(unlikely(is_debuggable(DEBUG_BASE) && ux_type != UX_TYPE_SYSTEM_LOCK),
 				"set ux_type %d to %d\n", ux_type, ux_task->pid);
+		put_task_struct(ux_task);
 	}
 	mutex_unlock(&ux_mutex);
 }
@@ -158,10 +158,10 @@ void task_ux_type_clear(int pid, int ux_type) {
 #endif
 		}
 		task_clr_ux_type(ux_task, ux_type);
-		put_task_struct(ux_task);
 
 		cond_trace_printk(unlikely(is_debuggable(DEBUG_BASE) && ux_type != UX_TYPE_SYSTEM_LOCK),
 				"clr ux_type %d from %d\n", ux_type, ux_task->pid);
+		put_task_struct(ux_task);
 	}
 	mutex_unlock(&ux_mutex);
 }
@@ -190,7 +190,7 @@ int task_get_mvp_prio(struct task_struct *p, bool with_inherit)
 		prio = UX_PRIO_TOPAPP;
 	else if (is_enabled(UX_ENABLE_KSWAPD) && (ux_type & UX_TYPE_KSWAPD))
 		prio = UX_PRIO_KSWAPD;
-	else if (ux_type & (UX_TYPE_MDPF))
+	else if (is_enabled(UX_ENABLE_MDPF) && (ux_type & UX_TYPE_MDPF))
 		prio = UX_PRIO_MDPF;
 	// system lock & service mgr
 	else if ((ux_type & (UX_TYPE_SYSTEM_LOCK|UX_TYPE_SERVICEMANAGER)) || (p->tgid == global_systemserver_tgid && p->prio == 105) )
@@ -467,9 +467,13 @@ static void android_vh_binder_proc_transaction_finish(void *unused, struct binde
 }
 #endif
 
-void register_vendor_comm_hooks(void)
+int register_vendor_comm_hooks(void)
 {
-	register_trace_android_vh_dup_task_struct(android_vh_dup_task_struct, NULL);
+	int ret;
+
+	ret = register_trace_android_vh_dup_task_struct(android_vh_dup_task_struct, NULL);
+	if (ret)
+		return ret;
 #if (LINUX_VERSION_CODE == KERNEL_VERSION(5, 10, 0))
 	register_trace_android_vh_binder_priority_skip(probe_android_vh_binder_priority_skip, NULL);
 #endif
@@ -478,6 +482,5 @@ void register_vendor_comm_hooks(void)
 		android_vh_binder_proc_transaction_finish, NULL);
 #endif
 
-	if (msched_uclamp_register_vendor_comm_hooks())
-		pr_err("Unable to register MDPF scheduler hooks\n");
+	return 0;
 }

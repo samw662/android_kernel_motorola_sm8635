@@ -94,14 +94,17 @@ static void android_vh_mutex_wait_start_handler(void *unused, struct mutex *lock
 		return;
 	}
 
+	rcu_read_lock();
 	owner_ts = __mutex_owner(lock);
+	if (owner_ts && !refcount_inc_not_zero(&owner_ts->usage))
+		owner_ts = NULL;
+	rcu_read_unlock();
 	if (!owner_ts) {
 		cond_trace_printk(unlikely(is_debuggable(DEBUG_BASE)),
 				"mutex owner not found!!! =%d\n", current->pid);
 		return;
 	}
 
-	get_task_struct(owner_ts);
 	boost = lock_inherit_ux_type(owner_ts, current, "mutex_wait");
 
 	if (boost && (__mutex_owner(lock) != owner_ts)) {
@@ -120,16 +123,32 @@ void android_vh_mutex_unlock_slowpath_handler(void *unused, struct mutex *lock)
 	lock_clear_inherited_ux_type(current, "mutex_wait_finish");
 }
 
-void register_mutex_vendor_hooks(void)
+int register_mutex_vendor_hooks(void)
 {
-	register_trace_android_vh_alter_mutex_list_add(android_vh_alter_mutex_list_add_handler, NULL);
-	register_trace_android_vh_mutex_wait_start(android_vh_mutex_wait_start_handler, NULL);
-	register_trace_android_vh_mutex_unlock_slowpath(android_vh_mutex_unlock_slowpath_handler, NULL);
+	int ret;
+
+	ret = register_trace_android_vh_alter_mutex_list_add(android_vh_alter_mutex_list_add_handler, NULL);
+	if (ret)
+		return ret;
+	ret = register_trace_android_vh_mutex_wait_start(android_vh_mutex_wait_start_handler, NULL);
+	if (ret)
+		goto err_list;
+	ret = register_trace_android_vh_mutex_unlock_slowpath(android_vh_mutex_unlock_slowpath_handler, NULL);
+	if (ret)
+		goto err_wait;
+	return 0;
+
+err_wait:
+	unregister_trace_android_vh_mutex_wait_start(android_vh_mutex_wait_start_handler, NULL);
+err_list:
+	unregister_trace_android_vh_alter_mutex_list_add(android_vh_alter_mutex_list_add_handler, NULL);
+	tracepoint_synchronize_unregister();
+	return ret;
 }
 
 void unregister_mutex_vendor_hooks(void)
 {
-	unregister_trace_android_vh_alter_mutex_list_add(android_vh_alter_mutex_list_add_handler, NULL);
-	unregister_trace_android_vh_mutex_wait_start(android_vh_mutex_wait_start_handler, NULL);
 	unregister_trace_android_vh_mutex_unlock_slowpath(android_vh_mutex_unlock_slowpath_handler, NULL);
+	unregister_trace_android_vh_mutex_wait_start(android_vh_mutex_wait_start_handler, NULL);
+	unregister_trace_android_vh_alter_mutex_list_add(android_vh_alter_mutex_list_add_handler, NULL);
 }

@@ -85,6 +85,9 @@ static const struct msched_ops sched_ops = {
 	.binder_clear_inherited_ux_type = binder_clear_inherited_ux_type,
 	.binder_ux_type_set = binder_ux_type_set,
 	.queue_ux_task = queue_ux_task,
+	.rtmutex_prepare_setprio = msched_rtmutex_prepare_setprio,
+	.uclamp_eff_get = msched_uclamp_eff_get,
+	.sched_fork_init = msched_sched_fork_init,
 	.validate_mask = msched_validate_mask,
 	.mask_changed = msched_mask_changed,
 };
@@ -323,9 +326,11 @@ static ssize_t proc_ux_task_read(struct file *file, char __user *buf,
 	struct task_struct *task = NULL;
 	int ux_type = 0;
 
+	rcu_read_lock();
 	task = find_task_by_vpid(global_task_pid_to_read);
 	if (task)
 		get_task_struct(task);
+	rcu_read_unlock();
 
 	if (task) {
 		ux_type = task_get_ux_type(task);

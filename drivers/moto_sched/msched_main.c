@@ -32,6 +32,7 @@
 
 
 extern int locking_opt_init(void);
+extern void locking_opt_exit(void);
 
 static int __init moto_sched_init(void)
 {
@@ -52,17 +53,24 @@ static int __init moto_sched_init(void)
 	ret = msched_binder_register();
 	if (ret)
 		goto err_mdpf;
-	ret = moto_sched_register_ops();
+	ret = locking_opt_init();
 	if (ret)
 		goto err_binder;
-
-	register_vendor_comm_hooks();
-	locking_opt_init();
+	ret = moto_sched_register_ops();
+	if (ret)
+		goto err_locking;
+	ret = register_vendor_comm_hooks();
+	if (ret)
+		goto err_ops;
 	moto_sched_enable_writes();
 
 	pr_info("moto_sched_init succeed!\n");
 	return 0;
 
+err_ops:
+	set_moto_sched_ops(NULL);
+err_locking:
+	locking_opt_exit();
 err_binder:
 	msched_binder_unregister();
 err_mdpf:

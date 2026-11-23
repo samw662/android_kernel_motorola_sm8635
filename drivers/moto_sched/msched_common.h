@@ -164,10 +164,14 @@ extern void binder_inherit_ux_type(struct binder_transaction *t, struct task_str
 extern void binder_clear_inherited_ux_type(struct binder_transaction *t, struct task_struct *task);
 extern void binder_ux_type_set(struct task_struct *task);
 extern void queue_ux_task(struct rq *rq, struct task_struct *task, int enqueue);
+void msched_uclamp_eff_get(struct task_struct *p, enum uclamp_id id,
+		struct uclamp_se *limit, struct uclamp_se *effective, int *ret);
+void msched_rtmutex_prepare_setprio(struct task_struct *p, struct task_struct *donor);
+void msched_sched_fork_init(struct task_struct *p);
 extern bool lock_inherit_ux_type(struct task_struct *owner, struct task_struct *waiter, char* lock_name);
 extern bool lock_clear_inherited_ux_type(struct task_struct *waiter, char* lock_name);
 extern void lock_protect_update_starttime(struct task_struct *tsk, unsigned long settime_jiffies, char* lock_name, void* pointer);
-extern void register_vendor_comm_hooks(void);
+extern int register_vendor_comm_hooks(void);
 
 static inline bool is_debuggable(int type) {
 	return (moto_sched_debug & type) != 0;
@@ -208,6 +212,8 @@ static inline int task_get_ux_type(struct task_struct *p)
 
 	if (!is_enabled(UX_ENABLE_BINDER))
 		type &= ~(UX_TYPE_INHERIT_BINDER | UX_TYPE_LOW_LATENCY_BINDER);
+	if (!is_enabled(UX_ENABLE_LOCK))
+		type &= ~UX_TYPE_INHERIT_LOCK;
 	return type;
 }
 

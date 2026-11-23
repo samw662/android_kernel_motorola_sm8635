@@ -53,17 +53,17 @@ static inline bool locking_opt_enable(void)
 }
 
 #ifdef CONFIG_MOTO_FUTEX_INHERIT
-void register_futex_vendor_hooks(void);
+int register_futex_vendor_hooks(void);
 void unregister_futex_vendor_hooks(void);
 #endif
 
 #ifdef CONFIG_MOTO_RWSEM_INHERIT
-void register_rwsem_vendor_hooks(void);
+int register_rwsem_vendor_hooks(void);
 void unregister_rwsem_vendor_hooks(void);
 #endif
 
 #ifdef CONFIG_MOTO_MUTEX_INHERIT
-void register_mutex_vendor_hooks(void);
+int register_mutex_vendor_hooks(void);
 void unregister_mutex_vendor_hooks(void);
 #endif
 

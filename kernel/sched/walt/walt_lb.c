@@ -1103,7 +1103,7 @@ static void walt_sched_newidle_balance(void *unused, struct rq *this_rq,
 	 * newidle_balance()
 	 */
 	if (this_rq->ttwu_pending)
-		done = 0;
+		*done = 0;
 	else
 		walt_newidle_balance(this_rq, rf, pulled_task, done, false);
 }
