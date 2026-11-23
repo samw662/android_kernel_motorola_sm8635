@@ -15,6 +15,7 @@
 #include <linux/of_address.h>
 #include <linux/platform_device.h>
 #include <linux/pwm.h>
+#include <linux/qpnp/qti-pwm.h>
 #include <linux/types.h>
 #include <linux/pinctrl/consumer.h>
 
@@ -74,8 +75,10 @@ static int __indicator_led_config_pwm(struct qpnp_led_dev *led,
 	pstate.enabled = !!(pwm->duty_ns != 0);
 	pstate.period = pwm->period_ns;
 	pstate.duty_cycle = pwm->duty_ns;
-	pstate.output_type = led->led_setting.breath ?
-		PWM_OUTPUT_MODULATED : PWM_OUTPUT_FIXED;
+	rc = qpnp_lpg_pwm_set_output_type(led->pwm_dev,
+		led->led_setting.breath ? PWM_OUTPUT_MODULATED : PWM_OUTPUT_FIXED);
+	if (rc < 0)
+		return rc;
 
 	rc = pwm_apply_state(led->pwm_dev, &pstate);
 
@@ -311,8 +314,8 @@ static int indicator_led_register(struct indicator_led_chip *chip)
 			goto err_out;
 		}
 
-		if (pwm_get_output_type_supported(led->pwm_dev)
-				& PWM_OUTPUT_MODULATED) {
+		rc = qpnp_lpg_pwm_get_output_types_supported(led->pwm_dev);
+		if (rc > 0 && (rc & PWM_OUTPUT_MODULATED)) {
 			rc = sysfs_create_files(&led->cdev.dev->kobj,
 					breath_attrs);
 			if (rc < 0) {
@@ -381,7 +384,7 @@ static int indicator_led_parse_dt(struct indicator_led_chip *chip)
 							child_node->name;
 
 		led->pwm_dev =
-			devm_of_pwm_get(chip->dev, child_node, NULL);
+			devm_fwnode_pwm_get(chip->dev, of_fwnode_handle(child_node), NULL);
 		if (IS_ERR(led->pwm_dev)) {
 			rc = PTR_ERR(led->pwm_dev);
 			if (rc != -EPROBE_DEFER)

@@ -30,7 +30,7 @@
 #define TRANPORT_HEADER_SIZE (sizeof(struct stc) + CKSUM_SIZE)
 #define EMERGENCY_SPI_FREQ 1000000 /* 1MHz */
 
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define FWUPDATER_MIN(a, b) ((a) < (b) ? (a) : (b))
 
 #ifndef __KERNEL__
 _Static_assert(MAX_CHUNK_SIZE >= CRYPTO_IMAGES_CERT_PKG_SIZE);
@@ -196,7 +196,7 @@ static int xfer_payload_prep_next(struct qmrom_handle *handle,
 					hstc->len + sizeof(struct stc));
 		if (hstc_next) {
 			/* Don't wait idle, prepare the next hstc to be sent */
-			size_t to_send = MIN(MAX_CHUNK_SIZE, *size);
+			size_t to_send = FWUPDATER_MIN(MAX_CHUNK_SIZE, *size);
 			prepare_hstc(hstc_next, *data, to_send);
 			*size -= to_send;
 			*data += to_send;
@@ -303,8 +303,8 @@ static int send_data_chunks(struct qmrom_handle *handle, const char *data,
 	/* Sending the fw image */
 	LOG_INFO("Sending the image (%zu bytes)\n", size);
 	LOG_DBG("Sending a chunk (%zu bytes cksum 0x%08x)\n",
-		MIN(MAX_CHUNK_SIZE, size), *cksum);
-	prepare_hstc(hstc_current, data, MIN(MAX_CHUNK_SIZE, size));
+		FWUPDATER_MIN(MAX_CHUNK_SIZE, size), *cksum);
+	prepare_hstc(hstc_current, data, FWUPDATER_MIN(MAX_CHUNK_SIZE, size));
 	size -= hstc_current->len - CKSUM_SIZE;
 	data += hstc_current->len - CKSUM_SIZE;
 	do {

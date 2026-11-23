@@ -2591,7 +2591,6 @@ static int ctrl_mz_data_blocking_common(struct stmvl53l1_data *data,
 	void __user *p, bool is_additional)
 {
 	int rc = 0;
-	int rc0;
 	struct stmvl53l1_data_with_additional __user *d = p;
 	pid_t pid = current->pid;
 
@@ -2615,8 +2614,9 @@ static int ctrl_mz_data_blocking_common(struct stmvl53l1_data *data,
 		rc = sleep_for_data_timeout(data, pid, &data->mz_data_reader_list);
 	if (rc) {
 		kill_mz_data(&data->meas.multi_range_data);
-		rc0 = copy_to_user(&d->data, &data->meas.multi_range_data,
-			sizeof(VL53L1_MultiRangingData_t));
+		if (copy_to_user(&d->data, &data->meas.multi_range_data,
+				sizeof(VL53L1_MultiRangingData_t)))
+			rc = -EFAULT;
 		goto done;
 	}
 #ifdef PHIO_TIMEOUT_FIX

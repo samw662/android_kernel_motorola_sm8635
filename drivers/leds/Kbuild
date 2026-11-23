@@ -1,4 +1,8 @@
 # add -Wall to try to catch everything we can.
+ifeq ($(KBUILD_EXTMOD),)
+include $(srctree)/$(src)/Makefile
+endif
+
 EXTRA_CFLAGS += -Wall
 EXTRA_CFLAGS += -I$(TOP)/motorola/kernel/modules/include
 
