@@ -365,6 +365,8 @@ struct msm_cvp_inst {
 	struct msm_cvp_list freqs;
 	struct msm_cvp_list persistbufs;
 	struct cvp_dmamap_cache dma_cache;
+	bool dma_cleanup_failed;
+	bool dma_session_cleaned;
 	struct msm_cvp_list cvpdspbufs;
 	struct msm_cvp_list cvpwnccbufs;
 	struct msm_cvp_list frames;

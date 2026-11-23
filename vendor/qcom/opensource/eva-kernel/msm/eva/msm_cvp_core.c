@@ -516,6 +516,13 @@ int msm_cvp_close(void *instance)
 		inst->proc_name, inst, hash32_ptr(inst->session),
 		inst->session_type, inst->state);
 
+	if (inst->dma_cleanup_failed && inst->dma_session_cleaned) {
+		rc = msm_cvp_session_deinit_buffers(inst);
+		if (inst->dma_cleanup_failed)
+			return rc;
+		goto finish_close;
+	}
+
 	if (inst->session == 0) {
 		if (inst->state >= MSM_CVP_CORE_INIT_DONE &&
 			inst->state < MSM_CVP_OPEN_DONE) {
@@ -531,9 +538,13 @@ int msm_cvp_close(void *instance)
 		rc = msm_cvp_cleanup_instance(inst);
 		if (rc)
 			return -EINVAL;
-		msm_cvp_session_deinit(inst);
+		inst->dma_session_cleaned = true;
+		rc = msm_cvp_session_deinit(inst);
+		if (inst->dma_cleanup_failed)
+			return rc;
 	}
 
+finish_close:
 	rc = msm_cvp_comm_try_state(inst, MSM_CVP_CORE_UNINIT);
 	if (rc) {
 		dprintk(CVP_ERR,

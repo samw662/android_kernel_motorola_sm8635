@@ -14,13 +14,13 @@
 #include "cvp_power.h"
 #include "cvp_hfi_api.h"
 
-static void cvp_unmap_failed_persist(struct msm_cvp_inst *inst,
+static int cvp_unmap_failed_persist(struct msm_cvp_inst *inst,
 	struct eva_kmd_hfi_packet *in_pkt, unsigned int offset,
 	unsigned int buf_num, const int *fd_arr)
 {
 	struct cvp_buf_type *buf;
 	unsigned int i;
-	int ret;
+	int ret, cleanup_rc = 0;
 
 	for (i = 0; i < buf_num; i++) {
 		buf = (struct cvp_buf_type *)&in_pkt->pkt_data[offset];
@@ -30,10 +30,13 @@ static void cvp_unmap_failed_persist(struct msm_cvp_inst *inst,
 			if (ret)
 				dprintk(CVP_ERR, "%s: unmap buffer %u failed: %d\n",
 					__func__, i, ret);
+			if (ret && !cleanup_rc)
+				cleanup_rc = ret;
 			buf->fd = fd_arr[i];
 		}
 		offset += sizeof(*buf) >> 2;
 	}
+	return cleanup_rc;
 }
 
 static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
@@ -203,6 +206,8 @@ static int msm_cvp_session_process_hfi(
 		dprintk(CVP_ERR, "%s: invalid params\n", __func__);
 		return -EINVAL;
 	}
+	if (READ_ONCE(inst->dma_cleanup_failed))
+		return -ESHUTDOWN;
 
 	if (inst->state == MSM_CVP_CORE_INVALID) {
 		dprintk(CVP_ERR, "sess %pK INVALIDim reject new HFIs\n", inst);
@@ -691,7 +696,7 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 {
 	struct cvp_hfi_ops *ops_tbl;
 	struct cvp_hfi_cmd_session_hdr *cmd_hdr;
-	int pkt_type, rc = 0;
+	int pkt_type, rc = 0, cleanup_rc;
 	enum buf_map_type map_type;
 	int *fd_arr = NULL;
 	unsigned int i;
@@ -742,8 +747,10 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 			if (map_type == MAP_FRAME) {
 				msm_cvp_unmap_frame(inst, cmd_hdr->client_data.kdata);
 			} else if (map_type == MAP_PERSIST) {
-				cvp_unmap_failed_persist(inst, in_pkt, in_offset,
+				cleanup_rc = cvp_unmap_failed_persist(inst, in_pkt, in_offset,
 					in_buf_num, fd_arr);
+				if (cleanup_rc)
+					rc = cleanup_rc;
 			}
 		}
 	} else if (rc > 0) {
@@ -755,8 +762,10 @@ static int cvp_enqueue_pkt(struct msm_cvp_inst* inst,
 		if (map_type == MAP_FRAME) {
 			msm_cvp_unmap_frame(inst, cmd_hdr->client_data.kdata);
 		} else if (map_type == MAP_PERSIST) {
-			cvp_unmap_failed_persist(inst, in_pkt, in_offset,
+			cleanup_rc = cvp_unmap_failed_persist(inst, in_pkt, in_offset,
 				in_buf_num, fd_arr);
+			if (cleanup_rc)
+				rc = cleanup_rc;
 		}
 	}
 
@@ -1717,7 +1726,7 @@ int msm_cvp_session_deinit(struct msm_cvp_inst *inst)
 
 	session = (struct cvp_hal_session *)inst->session;
 	if (!session || session == (void *)0xdeadbeef)
-		return rc;
+		return msm_cvp_session_deinit_buffers(inst);
 
 	rc = msm_cvp_comm_try_state(inst, MSM_CVP_CLOSE_DONE);
 	if (rc)

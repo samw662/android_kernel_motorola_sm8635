@@ -19,7 +19,7 @@
 #define MAX_FRAME_BUFFER_NUMS 40
 #define MAX_DMABUF_NUMS 64
 #define IS_CVP_BUF_VALID(buf, smem) \
-	((buf->size <= smem->size) && \
+	((buf->offset <= smem->size) && \
 	(buf->size <= smem->size - buf->offset))
 
 struct msm_cvp_inst;
@@ -132,6 +132,8 @@ struct cvp_internal_buf {
 	u64 ktid;
 	enum buffer_owner ownership;
 	struct msm_cvp_smem *smem;
+	u32 persist_refs;
+	bool dsp_unmapped;
 };
 
 struct msm_cvp_frame {

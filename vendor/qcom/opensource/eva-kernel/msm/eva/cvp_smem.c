@@ -120,6 +120,11 @@ static int msm_dma_get_device_address(struct dma_buf *dbuf, u32 align,
 
 		if (table->sgl) {
 			*iova = table->sgl->dma_address;
+			if ((dma_addr_t)(u32)*iova != *iova) {
+				dprintk(CVP_ERR, "iova(%pa) exceeds 32 bits\n", iova);
+				rc = -ERANGE;
+				goto mem_map_sg_failed;
+			}
 		} else {
 			dprintk(CVP_ERR, "sgl is NULL\n");
 			rc = -ENOMEM;
@@ -163,9 +168,13 @@ static int msm_dma_put_device_address(u32 flags,
 		return -EINVAL;
 	}
 
-	if (!mapping_info->dev || !mapping_info->table ||
-		!mapping_info->buf || !mapping_info->attach ||
-		!mapping_info->cb_info) {
+	if (!mapping_info->dev && !mapping_info->table &&
+		!mapping_info->buf && !mapping_info->attach &&
+		!mapping_info->cb_info)
+		return 0;
+
+	if (!mapping_info->table || !mapping_info->buf ||
+		!mapping_info->attach) {
 		dprintk(CVP_WARN, "Invalid params\n");
 		return -EINVAL;
 	}
@@ -175,7 +184,8 @@ static int msm_dma_put_device_address(u32 flags,
 	cb = (struct context_bank_info *) mapping_info->cb_info;
 	dbuf = mapping_info->buf;
 	dprintk(CVP_MEM, "%s: CB dev_name: %s, attach dev_name: %s, attach: 0x%lx, dbuf: 0x%lx",
-		__func__, dev_name(cb->dev), dev_name(attach->dev), attach, dbuf);
+		__func__, cb ? dev_name(cb->dev) : "none",
+		dev_name(attach->dev), attach, dbuf);
 	dprintk(CVP_MEM, "%s: sg-table: 0x%lx, dbuf: 0x%lx, table->sgl->dma_address: 0x%lx",
 		__func__, table, dbuf, table->sgl->dma_address);
 
@@ -268,11 +278,6 @@ int msm_cvp_map_smem(struct msm_cvp_inst *inst,
 		goto exit;
 	}
 	temp = (u32)iova;
-	if ((dma_addr_t)temp != iova) {
-		dprintk(CVP_ERR, "iova(%pa) truncated to %#x", &iova, temp);
-		rc = -EINVAL;
-		goto exit;
-	}
 
 	smem->size = dma_buf->size;
 	smem->device_addr = (u32)iova;
@@ -425,11 +430,6 @@ static int alloc_dma_mem(size_t size, u32 align, int map_kernel,
 		goto fail_device_address;
 	}
 	mem->device_addr = (u32)iova;
-	if ((dma_addr_t)mem->device_addr != iova) {
-		dprintk(CVP_ERR, "iova(%pa) truncated to %#x",
-			&iova, mem->device_addr);
-		goto fail_device_address;
-	}
 
 	if (map_kernel) {
 		dma_buf_begin_cpu_access(dbuf, DMA_BIDIRECTIONAL);
@@ -451,6 +451,8 @@ static int alloc_dma_mem(size_t size, u32 align, int map_kernel,
 fail_map:
 	if (map_kernel)
 		dma_buf_end_cpu_access(dbuf, DMA_BIDIRECTIONAL);
+	msm_dma_put_device_address(mem->flags, &mem->mapping_info);
+	mem->device_addr = 0;
 fail_device_address:
 	dma_heap_buffer_free(dbuf);
 fail_shared_mem_alloc:
@@ -459,12 +461,15 @@ fail_shared_mem_alloc:
 
 static int free_dma_mem(struct msm_cvp_smem *mem)
 {
+	int rc;
 	dprintk(CVP_MEM,
 		"%s: dma_buf = %pK, device_addr = %x, size = %d, kvaddr = %pK\n",
 		__func__, mem->dma_buf, mem->device_addr, mem->size, mem->kvaddr);
 
-	if (mem->device_addr) {
-		msm_dma_put_device_address(mem->flags, &mem->mapping_info);
+	if (mem->device_addr || mem->mapping_info.table) {
+		rc = msm_dma_put_device_address(mem->flags, &mem->mapping_info);
+		if (rc)
+			return rc;
 		mem->device_addr = 0x0;
 	}
 
