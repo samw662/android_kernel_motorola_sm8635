@@ -104,7 +104,7 @@ LINUXINCLUDE +=                                 \
 	-I$(CAMERA_KERNEL_ROOT)/
 # Optional include directories
 SYNXVENDORDIR=$(CAMERA_KERNEL_ROOT)/../synx-kernel
-ccflags-$(CONFIG_MSM_GLOBAL_SYNX) += -I$(KERNEL_ROOT)/drivers/media/platform/msm/synx
+ccflags-$(CONFIG_MSM_GLOBAL_SYNX) += -I$(SYNXVENDORDIR)/msm/synx
 ccflags-$(CONFIG_TARGET_SYNX_ENABLE) += -I$(SYNXVENDORDIR)/include/uapi/synx/media
 ccflags-$(CONFIG_TARGET_SYNX_ENABLE) += -I$(SYNXVENDORDIR)/msm/synx
 ccflags-$(CONFIG_TARGET_SYNX_ENABLE) += -DCONFIG_TARGET_SYNX_ENABLE=1

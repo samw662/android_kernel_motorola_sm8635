@@ -603,6 +603,7 @@ static const struct of_device_id st_stmvl53l1_dt_match[] = {
 	{ .compatible = "st,"STMVL53L1_DRV_NAME, },
 	{ },
 };
+MODULE_DEVICE_TABLE(of, st_stmvl53l1_dt_match);
 
 static struct i2c_driver stmvl53l1_driver = {
 	.driver = {

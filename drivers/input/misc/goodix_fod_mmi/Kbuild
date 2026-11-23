@@ -4,6 +4,7 @@ EXTRA_CFLAGS += -I$(srctree)/include \
 
 ifneq ($(filter m y,$(CONFIG_MMI_RELAY)),)
 	EXTRA_CFLAGS += -DMMI_RELAY_MODULE
+	KBUILD_EXTRA_SYMBOLS += $(objtree)/drivers/mmi_relay/Module.symvers
 endif
 
 ifneq ($(filter m y,$(CONFIG_GOODIX_DRM_PANEL_NOTIFICATIONS)),)
@@ -17,5 +18,3 @@ endif
 goodix_fod_mmi-y += gf_spi.o netlink.o platform.o
 
 obj-m += goodix_fod_mmi.o
-
-KBUILD_EXTRA_SYMBOLS += $(objtree)/drivers/mmi_relay/Module.symvers

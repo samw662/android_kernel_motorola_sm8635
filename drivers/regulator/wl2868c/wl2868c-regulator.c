@@ -487,9 +487,16 @@ static const struct i2c_device_id wl2868c_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, wl2868c_i2c_id);
 
+static const struct of_device_id wl2868c_of_match[] = {
+	{ .compatible = "semi,wl2868c" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, wl2868c_of_match);
+
 static struct i2c_driver wl2868c_regulator_driver = {
 	.driver = {
 		.name = "wl2868c-regulator",
+		.of_match_table = wl2868c_of_match,
 	},
 	.probe = wl2868c_i2c_probe,
 	.remove = wl2868c_i2c_remove,
