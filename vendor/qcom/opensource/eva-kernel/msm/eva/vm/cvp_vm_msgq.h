@@ -7,6 +7,7 @@
 #define _CVP_VM_MSGQ_H_
 
 #include <linux/types.h>
+#include <linux/spinlock.h>
 #include <linux/gunyah/gh_msgq.h>
 #include <linux/gunyah/gh_rm_drv.h>
 #include "cvp_comm_def.h"
@@ -49,6 +50,10 @@ struct cvp_msgq_ops;
 
 struct cvp_msgq_drv {
 	struct mutex ipc_lock;	/* Mutex for sending MSG */
+	spinlock_t rsp_lock;
+	bool stopping;
+	bool initialized;
+	bool notifier_registered;
 	struct cvp_gh_msgq_config config;
 	struct task_struct *receiver_thread;
 	struct completion completions[CVP_MAX_IPC_CMD + 1];
