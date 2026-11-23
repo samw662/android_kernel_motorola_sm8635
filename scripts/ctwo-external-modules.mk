@@ -2,6 +2,7 @@
 KERNEL_SRC := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/..)
 VENDOR := vendor/qcom/opensource
 MM_ROOT := $(KERNEL_SRC)/$(VENDOR)/mm-drivers/
+WLAN_PROFILE ?= kiwi_v2
 KBUILD_ARGS = O=$(KERNEL_OUT) ARCH=arm64 LLVM=$(LLVM) LLVM_IAS=1 \
 	KCFLAGS=-D__ANDROID_COMMON_KERNEL__ LOCALVERSION= KERNEL_SRC=$(KERNEL_SRC)
 
@@ -103,6 +104,10 @@ check-moto-sched: check-inputs
 	@grep -qx 'CONFIG_SCHED_MOTO_UNFAIR=y' "$(KERNEL_OUT)/.config" && \
 	  grep -Eq '^CONFIG_SCHED_WALT=(y|m)$$' "$(KERNEL_OUT)/.config" || \
 	  { printf '%s\n' 'Moto Scheduler requires CONFIG_SCHED_MOTO_UNFAIR=y and CONFIG_SCHED_WALT=y or m' >&2; exit 1; }
+	@for sym in set_moto_sched_ops set_moto_sched_enabled get_moto_sched_enabled walt_moto_uclamp_ready; do \
+	  awk -v sym="$$sym" '$$2 == sym { found = 1 } END { exit !found }' "$(KERNEL_OUT)/Module.symvers" || \
+	    { printf 'Missing WALT export %s in kernel Module.symvers\n' "$$sym" >&2; exit 1; }; \
+	done
 
 b2-moto-sched: check-moto-sched
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/moto_sched modules
