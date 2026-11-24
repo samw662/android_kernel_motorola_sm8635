@@ -717,8 +717,11 @@ unsigned int system_cur_usable_mem(void)
 
 		if (!pgdat)
 			continue;
-		for (zid = 0; zid < MAX_NR_ZONES; zid++)
-			wmark_low += low_wmark_pages(&pgdat->node_zones[zid]);
+		for (zid = 0; zid < MAX_NR_ZONES; zid++) {
+			struct zone *zone = &pgdat->node_zones[zid];
+
+			wmark_low += low_wmark_pages(zone);
+		}
 	}
 	pagecache = global_node_page_state(NR_ACTIVE_FILE) +
 		global_node_page_state(NR_INACTIVE_FILE);

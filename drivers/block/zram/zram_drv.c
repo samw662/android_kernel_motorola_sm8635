@@ -1912,12 +1912,13 @@ static void zram_hyb_end_io(struct bio *bio)
 	bio->bi_end_io = io->end_io;
 	bio->bi_private = io->private;
 	kfree(io);
+	if (bio->bi_end_io)
+		bio->bi_end_io(bio);
+	/* The callback may still use the device; reset must wait for it. */
 	spin_lock_irqsave(&zram_hyb_submit_lock, flags);
 	if (atomic_dec_and_test(&zram->hyb_inflight))
 		wake_up_var(&zram->hyb_inflight);
 	spin_unlock_irqrestore(&zram_hyb_submit_lock, flags);
-	if (bio->bi_end_io)
-		bio->bi_end_io(bio);
 }
 
 static void zram_hyb_bio_work(struct work_struct *work)
@@ -2597,5 +2598,8 @@ module_param(num_devices, uint, 0);
 MODULE_PARM_DESC(num_devices, "Number of pre-created zram devices");
 
 MODULE_LICENSE("Dual BSD/GPL");
+#ifdef CONFIG_HYBRIDSWAP_CORE
+MODULE_IMPORT_NS(MINIDUMP);
+#endif
 MODULE_AUTHOR("Nitin Gupta <ngupta@vflare.org>");
 MODULE_DESCRIPTION("Compressed RAM Block Device");

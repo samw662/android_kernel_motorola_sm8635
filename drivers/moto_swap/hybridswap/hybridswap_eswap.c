@@ -2215,33 +2215,31 @@ static bool zram_test_overwrite(struct zram *zram, u32 index, int eswapid)
 
 
 
-static void move_to_hybridswap(struct zram *zram, u32 index,
+static bool move_to_hybridswap(struct zram *zram, u32 index,
 		       unsigned long eswpentry, struct mem_cgroup *mcg)
 {
 	int size;
 	struct hybstatus *stat = hybridswap_fetch_stat_obj();
 
-	if (!stat) {
-		hybp(HYB_ERR, "NULL stat\n");
-		return;
-	}
-	if (!zram) {
+	if (!zram || !zram->infos) {
 		hybp(HYB_ERR, "NULL zram\n");
-		return;
+		return false;
 	}
 	if (index >= (u32)zram->infos->total_objects) {
 		hybp(HYB_ERR, "index = %d invalid\n", index);
-		return;
+		return false;
+	}
+	if (!stat) {
+		hybp(HYB_ERR, "NULL stat\n");
+		goto fail;
 	}
 	if (!mcg) {
 		hybp(HYB_ERR, "NULL mcg\n");
-		return;
+		goto fail;
 	}
 
-	if (WARN_ON_ONCE(!zram_set_mcg(zram, index, mcg))) {
-		hybridswap_slot_clear_busy(zram, index, ZRAM_HYB_WRITE);
-		return;
-	}
+	if (WARN_ON_ONCE(!zram_set_mcg(zram, index, mcg)))
+		goto fail;
 	size = zram_get_obj_size(zram, index);
 
 	hybridswap_slot_clear_busy(zram, index, ZRAM_HYB_WRITE);
@@ -2264,6 +2262,10 @@ static void move_to_hybridswap(struct zram *zram, u32 index,
 	atomic64_inc(&stat->stored_pages);
 	atomic_inc(&zram->infos->eswap_stored_pages[esentry_extid(eswpentry)]);
 	atomic64_inc(&MEMCGRP_ITEM(mcg, hybridswap_stored_pages));
+	return true;
+fail:
+	hybridswap_slot_clear_busy(zram, index, ZRAM_HYB_WRITE);
+	return false;
 }
 
 static void __move_to_zram(struct zram *zram, u32 index, unsigned long handle,
@@ -2393,10 +2395,10 @@ static int eswap_unlock(struct io_eswapent *io_eswap)
 	for (k = 0; k < io_eswap->cnt; k++)
 		zram_slot_lock(zram, io_eswap->index[k]);
 	for (k = 0; k < io_eswap->cnt; k++) {
-		move_to_hybridswap(zram, io_eswap->index[k], eswpentry, mcg);
 		size = zram_get_obj_size(zram, io_eswap->index[k]);
+		if (move_to_hybridswap(zram, io_eswap->index[k], eswpentry, mcg))
+			real_load += size;
 		eswpentry += size;
-		real_load += size;
 	}
 	put_eswap(zram->infos, eswapid);
 	io_eswap->eswapid = -EINVAL;
@@ -4552,6 +4554,10 @@ struct workqueue_struct *hybridswap_fetch_reclaim_workqueue(void)
 static int hybridswap_core_init(struct zram *zram, const char *path)
 {
 	int ret;
+
+	/* Global settings and the exclusive bdev belong to one zram instance. */
+	if (READ_ONCE(global_settings.zram) || zram->hyb_bdev)
+		return -EBUSY;
 
 	if (!*path) {
 		hybp(HYB_ERR, "please setting loop_device first\n");
