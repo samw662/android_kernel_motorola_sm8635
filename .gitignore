@@ -177,3 +177,15 @@ sphinx_*/
 # Android ABI build files
 abi_gki_protected_exports
 all_kmi_symbols
+
+# No build tools should be shown
+
+/build_ram-ctwo.sh
+/out/
+/scripts/build-native-ctwo.sh
+/scripts/ctwo-package-boot.py
+/scripts/ctwo-package-dlkm.py
+/scripts/ctwo-system-dlkm-gate.py
+/scripts/ctwo-erofs-archive.py
+/scripts/ctwo-dev-vbmeta.py
+/scripts/ctwo-toolchain.path
