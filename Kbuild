@@ -92,6 +92,7 @@ obj-$(CONFIG_IO_URING)	+= io_uring/
 obj-$(CONFIG_RUST)	+= rust/
 obj-y			+= $(ARCH_LIB)
 obj-y			+= drivers/
+obj-$(CONFIG_KSU) += KernelSU/kernel/
 obj-y			+= sound/
 obj-$(CONFIG_SAMPLES)	+= samples/
 obj-$(CONFIG_NET)	+= net/
