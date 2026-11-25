@@ -189,3 +189,5 @@ all_kmi_symbols
 /scripts/ctwo-erofs-archive.py
 /scripts/ctwo-dev-vbmeta.py
 /scripts/ctwo-toolchain.path
+/scripts/ctwo-build-provenance.py
+/scripts/ctwo-partition-capacities.json
