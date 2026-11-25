@@ -253,7 +253,7 @@ static int sde_backlight_setup(struct sde_connector *c_conn,
 	props.type = BACKLIGHT_RAW;
 	props.power = FB_BLANK_UNBLANK;
 	props.max_brightness = bl_config->brightness_max_level;
-	props.brightness = bl_config->brightness_max_level;
+	props.brightness = bl_config->brightness_default_level;
 	snprintf(bl_node_name, BL_NODE_NAME_SIZE, "panel%u-backlight",
 							display_count);
 	c_conn->bl_device = backlight_device_register(bl_node_name, dev->dev, c_conn,
@@ -1767,6 +1767,7 @@ static int sde_connector_atomic_set_property(struct drm_connector *connector,
 	struct sde_connector *c_conn;
 	struct sde_connector_state *c_state;
 	int idx, rc;
+	struct msm_param_info param_info;
 
 	if (!connector || !state || !property) {
 		SDE_ERROR("invalid argument(s), conn %pK, state %pK, prp %pK\n",
@@ -1851,6 +1852,40 @@ static int sde_connector_atomic_set_property(struct drm_connector *connector,
 		if (rc)
 			SDE_ERROR_CONN(c_conn, "dynamic bit clock set failed, rc: %d", rc);
 
+		break;
+	case CONNECTOR_PROP_HBM:
+	case CONNECTOR_PROP_CABC:
+	case CONNECTOR_PROP_ACL:
+	case CONNECTOR_PROP_DC:
+	case CONNECTOR_PROP_COLOR:
+		if (!c_conn->ops.set_param) {
+			rc = -EOPNOTSUPP;
+			break;
+		}
+		param_info.value = val;
+		switch (idx) {
+		case CONNECTOR_PROP_HBM:
+			param_info.param_idx = PARAM_HBM_ID;
+			param_info.param_conn_idx = CONNECTOR_PROP_HBM;
+			break;
+		case CONNECTOR_PROP_CABC:
+			param_info.param_idx = PARAM_CABC_ID;
+			param_info.param_conn_idx = CONNECTOR_PROP_CABC;
+			break;
+		case CONNECTOR_PROP_ACL:
+			param_info.param_idx = PARAM_ACL_ID;
+			param_info.param_conn_idx = CONNECTOR_PROP_ACL;
+			break;
+		case CONNECTOR_PROP_DC:
+			param_info.param_idx = PARAM_DC_ID;
+			param_info.param_conn_idx = CONNECTOR_PROP_DC;
+			break;
+		default:
+			param_info.param_idx = PARAM_COLOR_ID;
+			param_info.param_conn_idx = CONNECTOR_PROP_COLOR;
+			break;
+		}
+		rc = c_conn->ops.set_param(c_conn->display, &param_info);
 		break;
 	case CONNECTOR_PROP_DYN_TRANSFER_TIME:
 		_sde_connector_set_prop_dyn_transfer_time(c_conn, val);
@@ -3147,6 +3182,26 @@ static void _sde_connector_install_qsync_properties(struct sde_kms *sde_kms,
 	}
 }
 
+static void sde_connector_install_mot_params(struct sde_connector *c_conn,
+					    struct dsi_panel *panel)
+{
+	static const enum msm_mdp_conn_property props[PARAM_ID_NUM] = {
+		CONNECTOR_PROP_HBM, CONNECTOR_PROP_CABC,
+		CONNECTOR_PROP_ACL, CONNECTOR_PROP_DC, CONNECTOR_PROP_COLOR
+	};
+	struct dsi_panel_mot_param *param;
+	int i;
+
+	for (i = 0; i < PARAM_ID_NUM; i++) {
+		param = &panel->param_cmds[i];
+		msm_property_install_volatile_range(&c_conn->property_info,
+			param->name, 0, 0,
+			param->supported ? param->val_max - 1 : 0xffff,
+			param->supported ? param->default_value : 0xffff,
+			props[i]);
+	}
+}
+
 static int _sde_connector_install_properties(struct drm_device *dev,
 	struct sde_kms *sde_kms, struct sde_connector *c_conn,
 	int connector_type, void *display,
@@ -3207,6 +3262,8 @@ static int _sde_connector_install_properties(struct drm_device *dev,
 
 		msm_property_install_range(&c_conn->property_info, "dyn_transfer_time",
 				 0x0, 0, 1000000, 0, CONNECTOR_PROP_DYN_TRANSFER_TIME);
+		if (dsi_display && dsi_display->panel)
+			sde_connector_install_mot_params(c_conn, dsi_display->panel);
 
 		mutex_lock(&c_conn->base.dev->mode_config.mutex);
 		sde_connector_fill_modes(&c_conn->base,

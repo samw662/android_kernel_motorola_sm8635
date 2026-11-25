@@ -484,6 +484,244 @@ error:
 	return rc;
 }
 
+int dsi_panel_dfps_send_cmd(struct dsi_panel *panel,
+			    struct dsi_display_mode *mode)
+{
+	struct dsi_panel_cmd_set *set;
+	struct dsi_cmd_desc *cmd;
+	enum dsi_cmd_set_type type;
+	bool async;
+	int i, rc = 0;
+
+	if (!panel || !mode || !mode->priv_info || !panel->host)
+		return -EINVAL;
+	if (!panel->dfps_caps.dfps_send_cmd_support)
+		return 0;
+
+	switch (mode->timing.refresh_rate) {
+	case 48:
+		type = DSI_CMD_SET_DFPS_CMD_48;
+		break;
+	case 60:
+		type = DSI_CMD_SET_DFPS_CMD_60;
+		break;
+	case 90:
+		type = DSI_CMD_SET_DFPS_CMD_90;
+		break;
+	case 120:
+		type = DSI_CMD_SET_DFPS_CMD_120;
+		break;
+	case 144:
+		type = DSI_CMD_SET_DFPS_CMD_144;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	mutex_lock(&panel->panel_lock);
+	set = &mode->priv_info->cmd_sets[type];
+	if (!set->count || !set->cmds) {
+		rc = -ENOENT;
+		goto out;
+	}
+	async = panel->dfps_caps.dfps_send_cmd_with_te_async &&
+		panel->dfps_caps.current_fps != 60 &&
+		panel->dfps_caps.current_fps != 90;
+	for (i = 0; i < set->count; i++) {
+		cmd = &set->cmds[i];
+		cmd->ctrl_flags = 0;
+		if (set->state == DSI_CMD_SET_STATE_LP)
+			cmd->msg.flags |= MIPI_DSI_MSG_USE_LPM;
+		if (async)
+			cmd->msg.flags |= MIPI_DSI_MSG_ASYNC_OVERRIDE;
+		else
+			cmd->msg.flags &= ~MIPI_DSI_MSG_ASYNC_OVERRIDE;
+		rc = dsi_host_transfer_sub(panel->host, cmd);
+		if (rc < 0)
+			goto out;
+		if (cmd->post_wait_ms)
+			usleep_range(cmd->post_wait_ms * 1000,
+				     cmd->post_wait_ms * 1000 + 10);
+	}
+	panel->dfps_caps.current_fps = mode->timing.refresh_rate;
+	rc = 0;
+out:
+	if (rc)
+		DSI_ERR("[%s] DFPS command for %u Hz failed: %d\n",
+			panel->name, mode->timing.refresh_rate, rc);
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
+static int dsi_panel_mot_tx_cmd_set(struct dsi_panel *panel,
+				   struct dsi_panel_cmd_set *set)
+{
+	struct dsi_cmd_desc *cmd;
+	int i, rc;
+
+	if (!set->cmds || !set->count)
+		return -EOPNOTSUPP;
+	for (i = 0; i < set->count; i++) {
+		cmd = &set->cmds[i];
+		cmd->ctrl_flags = 0;
+		if (set->state == DSI_CMD_SET_STATE_LP)
+			cmd->msg.flags |= MIPI_DSI_MSG_USE_LPM;
+		rc = dsi_host_transfer_sub(panel->host, cmd);
+		if (rc < 0)
+			return rc;
+		if (cmd->post_wait_ms)
+			usleep_range(cmd->post_wait_ms * 1000,
+				     cmd->post_wait_ms * 1000 + 10);
+	}
+	return 0;
+}
+
+static int dsi_panel_mot_set_local_hbm(struct dsi_panel *panel,
+				      struct dsi_panel_cmd_set *set,
+				      u32 value)
+{
+	struct dsi_panel_lhbm_config *lhbm = &panel->lhbm_config;
+	struct dsi_cmd_desc *cmd;
+	u8 *payload;
+	u32 alpha_level, alpha, bl_num;
+	int i;
+
+	if (!lhbm->enable || value == 1)
+		return 0;
+	if (!lhbm->dbv_level)
+		lhbm->dbv_level = panel->bl_config.bl_level;
+	if (value == 2) {
+		bl_num = lhbm->bl_num;
+		if (!bl_num)
+			bl_num = max_t(u32, 1,
+				panel->bl_config.bl_max_level / (lhbm->alpha_size - 1));
+		alpha_level = lhbm->dbv_level / bl_num;
+		if (alpha_level >= lhbm->alpha_size)
+			return -ERANGE;
+		alpha = lhbm->alpha[alpha_level];
+	}
+	for (i = 0; i < set->count; i++) {
+		cmd = &set->cmds[i];
+		payload = (u8 *)cmd->msg.tx_buf;
+		if (!payload || !cmd->msg.tx_len)
+			continue;
+		if (value == 2 && payload[0] == lhbm->alpha_reg) {
+			if (cmd->msg.tx_len < (lhbm->dc_hybird_threshold ? 5 : 3))
+				return -EINVAL;
+			if (lhbm->dc_hybird_threshold &&
+			    alpha_level > lhbm->dc_hybird_threshold) {
+				payload[1] = 0x10;
+				payload[2] = 0;
+				payload[3] = lhbm->dbv_level >> 8;
+				payload[4] = lhbm->dbv_level;
+			} else {
+				payload[1] = alpha >> 8;
+				payload[2] = alpha;
+				if (lhbm->dc_hybird_threshold) {
+					payload[3] = (lhbm->dc_hybird_threshold + 1) >> 8;
+					payload[4] = lhbm->dc_hybird_threshold + 1;
+				}
+			}
+			return 0;
+		}
+		if (value == 0 && payload[0] == 0x51) {
+			if (cmd->msg.tx_len < 3)
+				return -EINVAL;
+			payload[1] = lhbm->dbv_level >> 8;
+			payload[2] = lhbm->dbv_level;
+			return 0;
+		}
+	}
+	return value == 2 ? -ENOENT : 0;
+}
+
+static int dsi_panel_mot_wait_for_fps(struct dsi_panel *panel)
+{
+	struct dsi_panel_lhbm_config *lhbm = &panel->lhbm_config;
+	u32 remaining = lhbm->lhbm_wait_for_fps_count;
+	u32 interval = lhbm->lhbm_wait_for_fps_interval ?: 1;
+	u32 fps, i;
+	bool forbidden;
+
+	if (!lhbm->lhbm_wait_for_fps_valid || !remaining)
+		return 0;
+	while (remaining) {
+		if (!panel->cur_mode)
+			return -ENODEV;
+		fps = READ_ONCE(panel->cur_mode->timing.refresh_rate);
+		forbidden = false;
+		for (i = 0; i < lhbm->lhbm_not_allowed_fps_list_len; i++)
+			if (fps == lhbm->lhbm_not_allowed_fps_list[i]) {
+				forbidden = true;
+				break;
+			}
+		if (!forbidden)
+			return 0;
+		interval = min(interval, remaining);
+		usleep_range(interval * 1000, interval * 1000 + 10);
+		remaining -= interval;
+	}
+	return -ETIMEDOUT;
+}
+
+int dsi_panel_set_param(struct dsi_panel *panel,
+			struct msm_param_info *param_info)
+{
+	struct dsi_panel_mot_param *param;
+	struct dsi_panel_cmd_set *set;
+	int rc = 0;
+
+	if (!panel || !param_info ||
+	    (unsigned int)param_info->param_idx >= PARAM_ID_NUM ||
+	    param_info->value < 0)
+		return -EINVAL;
+	if (param_info->param_idx == PARAM_HBM_ID &&
+	    param_info->value == 2) {
+		rc = dsi_panel_mot_wait_for_fps(panel);
+		if (rc)
+			return rc;
+	}
+	mutex_lock(&panel->panel_lock);
+	param = &panel->param_cmds[param_info->param_idx];
+	if (!param->supported) {
+		rc = -EOPNOTSUPP;
+		goto out;
+	}
+	if (param_info->value >= param->val_max) {
+		rc = -ERANGE;
+		goto out;
+	}
+	if (!panel->panel_initialized || !panel->host || !panel->panel_send_cmd) {
+		rc = -ENODEV;
+		goto out;
+	}
+	if (param->value == param_info->value)
+		goto out;
+	set = &param->commands[param_info->value];
+	if (param_info->param_idx == PARAM_HBM_ID) {
+		rc = dsi_panel_mot_set_local_hbm(panel, set,
+					  param_info->value);
+		if (rc)
+			goto out;
+	}
+	rc = dsi_panel_mot_tx_cmd_set(panel, set);
+	if (rc)
+		goto out;
+	param->value = param_info->value;
+	if (param_info->param_idx == PARAM_HBM_ID &&
+	    param_info->value == 0) {
+		rc = dsi_panel_set_backlight(panel,
+					 panel->lhbm_config.dbv_level);
+		if (rc)
+			goto out;
+	}
+	if (param_info->param_idx == PARAM_DC_ID)
+		panel->dc_state = param_info->value;
+out:
+	mutex_unlock(&panel->panel_lock);
+	return rc;
+}
+
 static int dsi_panel_pinctrl_deinit(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -562,6 +800,8 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	int rc = 0;
 	unsigned long mode_flags = 0;
 	struct mipi_dsi_device *dsi = NULL;
+	struct dsi_backlight_config *bl = &panel->bl_config;
+	bool first_positive;
 
 	if (!panel || (bl_lvl > 0xffff)) {
 		DSI_ERR("invalid params\n");
@@ -569,6 +809,8 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	}
 
 	dsi = &panel->mipi_device;
+	first_positive = !bl->brightness_updated && bl_lvl;
+	bl->brightness_updated = bl_lvl;
 	if (unlikely(panel->bl_config.lp_mode)) {
 		mode_flags = dsi->mode_flags;
 		dsi->mode_flags |= MIPI_DSI_MODE_LPM;
@@ -576,8 +818,12 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 
 	if (panel->bl_config.bl_inverted_dbv)
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
+	if (bl->bl_2bytes_enable)
+		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
 
 	rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
+	if (rc >= 0 && bl->bl_double_write && first_positive)
+		rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
 	if (rc < 0)
 		DSI_ERR("failed to update dcs backlight:%d\n", bl_lvl);
 
@@ -642,6 +888,11 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
+
+	panel->lhbm_config.dbv_level = bl_lvl;
+	if (panel->param_cmds[PARAM_HBM_ID].supported &&
+	    panel->param_cmds[PARAM_HBM_ID].value != 0)
+		return 0;
 
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
@@ -1609,6 +1860,14 @@ static int dsi_panel_parse_dfps_caps(struct dsi_panel *panel)
 		goto error;
 	}
 	dfps_caps->dfps_support = true;
+	dfps_caps->dfps_send_cmd_with_te_async = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-pan-dfps-send-command-with-te-async");
+	dfps_caps->dfps_send_cmd_support = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-pan-dfps-send-command");
+	if (dfps_caps->dfps_send_cmd_support) {
+		dfps_caps->panel_on_fps = dfps_caps->dfps_list[0];
+		dfps_caps->current_fps = dfps_caps->panel_on_fps;
+	}
 
 	/* calculate max and min fps */
 	dfps_caps->max_refresh_rate = dfps_caps->dfps_list[0];
@@ -1900,6 +2159,26 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
 	"qcom,mdss-dsi-calibration-commands",
+	"qcom,mdss-dsi-hbm-fod-on-command",
+	"qcom,mdss-dsi-hbm-on-command",
+	"qcom,mdss-dsi-hbm-off-command",
+	"qcom,mdss-dsi-acl-on-command",
+	"qcom,mdss-dsi-acl-off-command",
+	"qcom,mdss-dsi-hbm-dim-off-command",
+	"qcom,mdss-dsi-cabc-ui-command",
+	"qcom,mdss-dsi-cabc-mv-command",
+	"qcom,mdss-dsi-cabc-dis-command",
+	"qcom,mdss-dsi-dc-on-command",
+	"qcom,mdss-dsi-dc-off-command",
+	"qcom,mdss-dsi-color-vbt-command",
+	"qcom,mdss-dsi-color-std-command",
+	"qcom,mdss-dsi-color-game-command",
+	"qcom,mdss-dsi-color-none-command",
+	"qcom,mdss-dsi-dfps-48-command",
+	"qcom,mdss-dsi-dfps-60-command",
+	"qcom,mdss-dsi-dfps-90-command",
+	"qcom,mdss-dsi-dfps-120-command",
+	"qcom,mdss-dsi-dfps-144-command",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1929,6 +2208,26 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
 	"qcom,mdss-dsi-calibration-commands-state",
+	"qcom,mdss-dsi-hbm-fod-on-command-state",
+	"qcom,mdss-dsi-hbm-on-command-state",
+	"qcom,mdss-dsi-hbm-off-command-state",
+	"qcom,mdss-dsi-acl-on-command-state",
+	"qcom,mdss-dsi-acl-off-command-state",
+	"qcom,mdss-dsi-hbm-dim-off-command-state",
+	"qcom,mdss-dsi-cabc-ui-command-state",
+	"qcom,mdss-dsi-cabc-mv-command-state",
+	"qcom,mdss-dsi-cabc-dis-command-state",
+	"qcom,mdss-dsi-dc-on-command-state",
+	"qcom,mdss-dsi-dc-off-command-state",
+	"qcom,mdss-dsi-color-vbt-command-state",
+	"qcom,mdss-dsi-color-std-command-state",
+	"qcom,mdss-dsi-color-game-command-state",
+	"qcom,mdss-dsi-color-none-command-state",
+	"qcom,mdss-dsi-dfps-48-command-state",
+	"qcom,mdss-dsi-dfps-60-command-state",
+	"qcom,mdss-dsi-dfps-90-command-state",
+	"qcom,mdss-dsi-dfps-120-command-state",
+	"qcom,mdss-dsi-dfps-144-command-state",
 };
 
 int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2058,7 +2357,7 @@ static int dsi_panel_parse_cmd_sets_sub(struct dsi_panel *panel,
 	}
 	if (!data) {
 		DSI_DEBUG("%s commands not defined\n", cmd_set_prop_map[type]);
-		rc = -ENOTSUPP;
+		rc = -EOPNOTSUPP;
 		goto error;
 	}
 
@@ -2095,6 +2394,8 @@ static int dsi_panel_parse_cmd_sets_sub(struct dsi_panel *panel,
 	} else {
 		DSI_ERR("[%s] command state unrecognized-%s\n",
 		       cmd_set_state_map[type], state);
+		rc = -EINVAL;
+		dsi_panel_destroy_cmd_packets(cmd);
 		goto error_free_mem;
 	}
 
@@ -2102,6 +2403,7 @@ static int dsi_panel_parse_cmd_sets_sub(struct dsi_panel *panel,
 error_free_mem:
 	kfree(cmd->cmds);
 	cmd->cmds = NULL;
+	cmd->count = 0;
 error:
 	return rc;
 
@@ -2141,6 +2443,144 @@ static int dsi_panel_parse_cmd_sets(
 
 	rc = 0;
 	return rc;
+}
+
+static const enum dsi_cmd_set_type mot_param_types[PARAM_ID_NUM]
+					       [DSI_MOT_MAX_PARAM_STATES] = {
+	[PARAM_HBM_ID] = { DSI_CMD_SET_HBM_OFF, DSI_CMD_SET_HBM_ON,
+			   DSI_CMD_SET_HBM_FOD_ON },
+	[PARAM_CABC_ID] = { DSI_CMD_SET_CABC_UI, DSI_CMD_SET_CABC_MV,
+			    DSI_CMD_SET_CABC_DIS },
+	[PARAM_ACL_ID] = { DSI_CMD_SET_ACL_OFF, DSI_CMD_SET_ACL_ON },
+	[PARAM_DC_ID] = { DSI_CMD_SET_DC_OFF, DSI_CMD_SET_DC_ON },
+	[PARAM_COLOR_ID] = { DSI_CMD_SET_COLOR_VBT, DSI_CMD_SET_COLOR_STD,
+			     DSI_CMD_SET_COLOR_GAME, DSI_CMD_SET_COLOR_NONE },
+};
+
+static void dsi_panel_mot_params_deinit(struct dsi_panel *panel)
+{
+	struct dsi_panel_mot_param *param;
+	struct dsi_panel_cmd_set *set;
+	int i, j;
+
+	for (i = 0; i < PARAM_ID_NUM; i++) {
+		param = &panel->param_cmds[i];
+		for (j = 0; j < DSI_MOT_MAX_PARAM_STATES; j++) {
+			set = &param->commands[j];
+			if (set->cmds) {
+				dsi_panel_destroy_cmd_packets(set);
+				dsi_panel_dealloc_cmd_packets(set);
+				set->cmds = NULL;
+				set->count = 0;
+			}
+		}
+	}
+	kfree(panel->lhbm_config.alpha);
+	panel->lhbm_config.alpha = NULL;
+	kfree(panel->lhbm_config.lhbm_not_allowed_fps_list);
+	panel->lhbm_config.lhbm_not_allowed_fps_list = NULL;
+	if (panel->hbm_dim_off_cmd.cmds) {
+		dsi_panel_destroy_cmd_packets(&panel->hbm_dim_off_cmd);
+		dsi_panel_dealloc_cmd_packets(&panel->hbm_dim_off_cmd);
+		panel->hbm_dim_off_cmd.cmds = NULL;
+	}
+}
+
+static int dsi_panel_parse_mot_params(struct dsi_panel *panel)
+{
+	static const char * const names[PARAM_ID_NUM] = {
+		"HBM", "CABC", "ACL", "DC", "COLOR"
+	};
+	static const u16 states[PARAM_ID_NUM] = { 3, 3, 2, 2, 4 };
+	struct dsi_panel_lhbm_config *lhbm = &panel->lhbm_config;
+	struct dsi_parser_utils *utils = &panel->utils;
+	struct dsi_panel_mot_param *param;
+	struct dsi_panel_cmd_set *set;
+	int i, j, rc, count;
+
+	panel->panel_hbm_fod = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-hbm-fod");
+	panel->panel_hbm_dim_off = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-hbm-dim-off");
+	if (panel->panel_hbm_dim_off) {
+		panel->hbm_dim_off_cmd.type = DSI_CMD_SET_HBM_DIM_OFF;
+		rc = dsi_panel_parse_cmd_sets_sub(panel,
+			&panel->hbm_dim_off_cmd, DSI_CMD_SET_HBM_DIM_OFF,
+			utils);
+		if (rc || !panel->hbm_dim_off_cmd.count)
+			return rc ?: -EINVAL;
+	}
+	for (i = 0; i < PARAM_ID_NUM; i++) {
+		param = &panel->param_cmds[i];
+		param->name = names[i];
+		param->val_max = states[i];
+		if (i == PARAM_HBM_ID && !panel->panel_hbm_fod)
+			param->val_max = 2;
+		param->supported = true;
+		for (j = 0; j < param->val_max; j++) {
+			set = &param->commands[j];
+			set->type = mot_param_types[i][j];
+			rc = dsi_panel_parse_cmd_sets_sub(panel, set, set->type,
+						   utils);
+			if (rc || !set->count) {
+				if (rc && rc != -EOPNOTSUPP)
+					return rc;
+				param->supported = false;
+				break;
+			}
+		}
+	}
+
+	lhbm->enable = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-enabled");
+	if (!lhbm->enable)
+		return 0;
+	if (!panel->param_cmds[PARAM_HBM_ID].supported)
+		return -EINVAL;
+	rc = utils->read_u32(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-alpha-size", &lhbm->alpha_size);
+	if (rc || lhbm->alpha_size < 2 || lhbm->alpha_size > 65536)
+		return -EINVAL;
+	lhbm->alpha = kcalloc(lhbm->alpha_size, sizeof(*lhbm->alpha), GFP_KERNEL);
+	if (!lhbm->alpha)
+		return -ENOMEM;
+	rc = utils->read_u32_array(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-alpha-table", lhbm->alpha,
+		lhbm->alpha_size);
+	if (rc)
+		return rc;
+	rc = utils->read_u32(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-alpha-register", &lhbm->alpha_reg);
+	if (rc)
+		return rc;
+	utils->read_u32(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-DC-HYBIRD-THRESHOLD-BL",
+		&lhbm->dc_hybird_threshold);
+	utils->read_u32(utils->data, "qcom,mdss-dsi-panel-bl-num",
+		&lhbm->bl_num);
+	lhbm->lhbm_wait_for_fps_valid = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-panel-lhbm-wait-fps-valid");
+	if (!lhbm->lhbm_wait_for_fps_valid)
+		return 0;
+	utils->read_u32(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-wait-fps-count",
+		&lhbm->lhbm_wait_for_fps_count);
+	utils->read_u32(utils->data,
+		"qcom,mdss-dsi-panel-local-hbm-wait-fps-interval",
+		&lhbm->lhbm_wait_for_fps_interval);
+	count = utils->count_u32_elems(utils->data,
+		"qcom,mdss-dsi-panel-lhbm-not-allowed-fps-list");
+	if (count <= 0)
+		return 0;
+	if (count > DSI_MODE_MAX)
+		return -EINVAL;
+	lhbm->lhbm_not_allowed_fps_list_len = count;
+	lhbm->lhbm_not_allowed_fps_list = kcalloc(count, sizeof(u32), GFP_KERNEL);
+	if (!lhbm->lhbm_not_allowed_fps_list)
+		return -ENOMEM;
+	return utils->read_u32_array(utils->data,
+		"qcom,mdss-dsi-panel-lhbm-not-allowed-fps-list",
+		lhbm->lhbm_not_allowed_fps_list, count);
 }
 
 static int dsi_panel_parse_reset_sequence(struct dsi_panel *panel)
@@ -2599,6 +3039,14 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	} else {
 		panel->bl_config.brightness_max_level = val;
 	}
+	rc = utils->read_u32(utils->data, "qcom,mdss-dsi-bl-default-level", &val);
+	panel->bl_config.brightness_default_level = rc ?
+		panel->bl_config.brightness_max_level :
+		min(val, panel->bl_config.brightness_max_level);
+	panel->bl_config.bl_2bytes_enable = utils->read_bool(utils->data,
+		"qcom,bklt-dcs-2bytes-enabled");
+	panel->bl_config.bl_double_write = utils->read_bool(utils->data,
+		"qcom,mdss-dsi-bl-double-write");
 
 	panel->bl_config.bl_inverted_dbv = utils->read_bool(utils->data,
 		"qcom,mdss-dsi-bl-inverted-dbv");
@@ -4116,6 +4564,12 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 			goto error;
 	}
 
+	rc = dsi_panel_parse_mot_params(panel);
+	if (rc) {
+		DSI_ERR("failed to parse Motorola panel parameters, rc=%d\n", rc);
+		goto error;
+	}
+
 	rc = dsi_panel_parse_misc_features(panel);
 	if (rc)
 		DSI_ERR("failed to parse misc features, rc=%d\n", rc);
@@ -4162,6 +4616,7 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 
 	return panel;
 error:
+	dsi_panel_mot_params_deinit(panel);
 	kfree(panel);
 	return ERR_PTR(rc);
 }
@@ -4172,6 +4627,7 @@ void dsi_panel_put(struct dsi_panel *panel)
 
 	/* free resources allocated for ESD check */
 	dsi_panel_esd_config_deinit(&panel->esd_config);
+	dsi_panel_mot_params_deinit(panel);
 
 	kfree(panel->avr_caps.avr_step_fps_list);
 	kfree(panel);
@@ -5239,7 +5695,12 @@ int dsi_panel_post_switch(struct dsi_panel *panel)
 
 int dsi_panel_enable(struct dsi_panel *panel)
 {
-	int rc = 0;
+	int rc = 0, i;
+	struct msm_param_info dc_param = {
+		.param_idx = PARAM_DC_ID,
+		.param_conn_idx = CONNECTOR_PROP_DC,
+		.value = 1,
+	};
 
 	if (!panel) {
 		DSI_ERR("Invalid params\n");
@@ -5271,9 +5732,18 @@ int dsi_panel_enable(struct dsi_panel *panel)
 		}
 	}
 	panel->panel_initialized = true;
+	panel->panel_send_cmd = true;
+	for (i = 0; i < PARAM_ID_NUM; i++)
+		panel->param_cmds[i].value =
+			panel->param_cmds[i].default_value;
 
 error:
 	mutex_unlock(&panel->panel_lock);
+	if (!rc && panel->dc_state) {
+		rc = dsi_panel_set_param(panel, &dc_param);
+		if (rc)
+			dsi_panel_disable(panel);
+	}
 	return rc;
 }
 
@@ -5294,6 +5764,9 @@ int dsi_panel_post_enable(struct dsi_panel *panel)
 		       panel->name, rc);
 		goto error;
 	}
+	if (panel->panel_hbm_dim_off)
+		rc = dsi_panel_mot_tx_cmd_set(panel,
+					  &panel->hbm_dim_off_cmd);
 error:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -5361,6 +5834,7 @@ int dsi_panel_disable(struct dsi_panel *panel)
 		}
 	}
 	panel->panel_initialized = false;
+	panel->panel_send_cmd = false;
 	panel->power_mode = SDE_MODE_DPMS_OFF;
 
 	mutex_unlock(&panel->panel_lock);

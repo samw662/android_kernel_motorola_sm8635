@@ -145,6 +145,8 @@ struct msm_kms_funcs {
 	int (*get_dsc_count)(const struct msm_kms *kms,
 			u32 hdisplay, u32 *num_dsc);
 	bool (*in_trusted_vm)(const struct msm_kms *kms);
+	int (*set_panel_feature)(const struct msm_kms *kms,
+			 struct panel_param_info param_info);
 };
 
 struct msm_kms {

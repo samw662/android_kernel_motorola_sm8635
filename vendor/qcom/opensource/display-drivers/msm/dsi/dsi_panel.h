@@ -90,6 +90,36 @@ struct dsi_dfps_capabilities {
 	u32 *dfps_list;
 	u32 dfps_list_len;
 	bool dfps_support;
+	bool dfps_send_cmd_support;
+	bool dfps_send_cmd_with_te_async;
+	u32 panel_on_fps;
+	u32 current_fps;
+};
+
+#define DSI_MOT_MAX_PARAM_STATES 4
+
+struct dsi_panel_mot_param {
+	const char *name;
+	u16 val_max;
+	u16 default_value;
+	u16 value;
+	bool supported;
+	struct dsi_panel_cmd_set commands[DSI_MOT_MAX_PARAM_STATES];
+};
+
+struct dsi_panel_lhbm_config {
+	bool enable;
+	u32 dc_hybird_threshold;
+	u32 dbv_level;
+	u32 alpha_reg;
+	u32 alpha_size;
+	u32 *alpha;
+	u32 bl_num;
+	bool lhbm_wait_for_fps_valid;
+	u32 lhbm_wait_for_fps_count;
+	u32 lhbm_wait_for_fps_interval;
+	u32 *lhbm_not_allowed_fps_list;
+	u32 lhbm_not_allowed_fps_list_len;
 };
 
 struct dsi_qsync_capabilities {
@@ -133,6 +163,10 @@ struct dsi_backlight_config {
 	u32 brightness_max_level;
 	/* current brightness value */
 	u32 brightness;
+	u32 brightness_default_level;
+	bool bl_2bytes_enable;
+	bool bl_double_write;
+	u32 brightness_updated;
 	u32 bl_level;
 	u32 bl_scale;
 	u32 bl_scale_sv;
@@ -257,6 +291,13 @@ struct dsi_panel {
 	bool poms_align_vsync;
 
 	struct dsi_dfps_capabilities dfps_caps;
+	struct dsi_panel_mot_param param_cmds[PARAM_ID_NUM];
+	struct dsi_panel_lhbm_config lhbm_config;
+	bool panel_hbm_fod;
+	bool panel_hbm_dim_off;
+	struct dsi_panel_cmd_set hbm_dim_off_cmd;
+	bool panel_send_cmd;
+	int dc_state;
 	struct dsi_dyn_clk_caps dyn_clk_caps;
 	struct dsi_panel_phy_props phy_props;
 	bool dsc_switch_supported;
@@ -375,6 +416,12 @@ int dsi_panel_set_nolp(struct dsi_panel *panel);
 int dsi_panel_prepare(struct dsi_panel *panel);
 
 int dsi_panel_enable(struct dsi_panel *panel);
+
+int dsi_panel_dfps_send_cmd(struct dsi_panel *panel,
+			    struct dsi_display_mode *mode);
+
+int dsi_panel_set_param(struct dsi_panel *panel,
+			struct msm_param_info *param_info);
 
 int dsi_panel_post_enable(struct dsi_panel *panel);
 

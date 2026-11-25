@@ -23,6 +23,7 @@
 #include <drm/drm_fixed.h>
 #include <drm/drm_panel.h>
 #include <linux/debugfs.h>
+#include "sde_motUtil.h"
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
 #include <linux/dma-buf.h>
@@ -159,6 +160,9 @@ static int _sde_debugfs_init(struct sde_kms *sde_kms)
 
 	(void) sde_debugfs_vbif_init(sde_kms, debugfs_root);
 	(void) sde_debugfs_core_irq_init(sde_kms, debugfs_root);
+	rc = sde_debugfs_mot_util_init(sde_kms, debugfs_root);
+	if (rc)
+		SDE_ERROR("failed to create Motorola display debug interface: %d\n", rc);
 
 	rc = sde_core_perf_debugfs_init(&sde_kms->perf, debugfs_root);
 	if (rc) {
@@ -1907,6 +1911,8 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		.get_panel_vfp = dsi_display_get_panel_vfp,
 		.get_default_lms = dsi_display_get_default_lms,
 		.cmd_receive = dsi_display_cmd_receive,
+		.set_param = dsi_display_set_param,
+		.motUtil_transfer = dsi_display_motUtil_transfer,
 		.install_properties = NULL,
 		.set_allowed_mode_switch = dsi_conn_set_allowed_mode_switch,
 		.set_dyn_bit_clk = dsi_conn_set_dyn_bit_clk,
@@ -3964,6 +3970,32 @@ static bool sde_kms_in_trusted_vm(const struct msm_kms *kms)
 	return sde_in_trusted_vm(sde_kms);
 }
 
+static int sde_kms_set_panel_feature(const struct msm_kms *kms,
+				     struct panel_param_info info)
+{
+	struct sde_kms *sde_kms;
+	struct dsi_display *display;
+	struct msm_param_info param;
+	int i, rc, first_error = 0, applied = 0;
+
+	if (!kms || (unsigned int)info.param_idx >= PARAM_ID_NUM)
+		return -EINVAL;
+	sde_kms = to_sde_kms(kms);
+	param.param_idx = (enum msm_param_id)info.param_idx;
+	param.value = info.value;
+	param.param_conn_idx = CONNECTOR_PROP_COUNT;
+	for (i = 0; i < sde_kms->dsi_display_count; i++) {
+		display = sde_kms->dsi_displays[i];
+		if (!display || !display->panel || !display->panel->panel_send_cmd)
+			continue;
+		applied++;
+		rc = dsi_display_set_param(display, &param);
+		if (rc && !first_error)
+			first_error = rc;
+	}
+	return first_error ? first_error : (applied ? 0 : -ENODEV);
+}
+
 static int _sde_kms_null_commit(struct drm_device *dev,
 		struct drm_encoder *enc)
 {
@@ -4495,6 +4527,7 @@ static const struct msm_kms_funcs kms_funcs = {
 	.get_mixer_count = sde_kms_get_mixer_count,
 	.get_dsc_count = sde_kms_get_dsc_count,
 	.in_trusted_vm = sde_kms_in_trusted_vm,
+	.set_panel_feature = sde_kms_set_panel_feature,
 };
 
 static int _sde_kms_mmu_destroy(struct sde_kms *sde_kms)

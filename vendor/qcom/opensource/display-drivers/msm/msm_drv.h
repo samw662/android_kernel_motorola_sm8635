@@ -233,6 +233,11 @@ enum msm_mdp_conn_property {
 	CONNECTOR_PROP_SV_BL_SCALE,
 	CONNECTOR_PROP_SUPPORTED_COLORSPACES,
 	CONNECTOR_PROP_DYN_BIT_CLK,
+	CONNECTOR_PROP_HBM,
+	CONNECTOR_PROP_CABC,
+	CONNECTOR_PROP_ACL,
+	CONNECTOR_PROP_DC,
+	CONNECTOR_PROP_COLOR,
 	CONNECTOR_PROP_DIMMING_CTRL,
 	CONNECTOR_PROP_DIMMING_MIN_BL,
 	CONNECTOR_PROP_EARLY_FENCE_LINE,
@@ -260,6 +265,28 @@ enum msm_mdp_conn_property {
 
 	/* total # of properties */
 	CONNECTOR_PROP_COUNT
+};
+
+enum msm_param_id {
+	PARAM_HBM_ID = 0,
+	PARAM_CABC_ID,
+	PARAM_ACL_ID,
+	PARAM_DC_ID,
+	PARAM_COLOR_ID,
+	PARAM_ID_NUM,
+};
+
+enum msm_param_state {
+	PARAM_STATE_OFF = 0,
+	PARAM_STATE_ON,
+	PARAM_STATE_NUM,
+	PARAM_STATE_DISABLE = 0xffff,
+};
+
+struct msm_param_info {
+	enum msm_param_id param_idx;
+	enum msm_mdp_conn_property param_conn_idx;
+	int value;
 };
 
 #define MSM_GPU_MAX_RINGS 4

@@ -21,6 +21,7 @@
 #include "dsi_ctrl.h"
 #include "dsi_phy.h"
 #include "dsi_panel.h"
+#include "sde_motUtil.h"
 
 #define MAX_DSI_CTRLS_PER_DISPLAY             2
 #define DSI_CLIENT_NAME_SIZE		20
@@ -681,6 +682,10 @@ void dsi_display_enable_event(struct drm_connector *connector,
  */
 int dsi_display_set_backlight(struct drm_connector *connector,
 		void *display, u32 bl_lvl);
+
+int dsi_display_set_param(void *display, struct msm_param_info *param_info);
+int dsi_display_motUtil_transfer(void *display, const char *cmd_buf,
+				u32 cmd_buf_len, struct motUtil *data);
 
 /**
  * dsi_display_check_status() - check if panel is dead or alive

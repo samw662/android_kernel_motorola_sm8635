@@ -281,6 +281,15 @@ error:
 	return rc;
 }
 
+int dsi_display_set_param(void *display, struct msm_param_info *param_info)
+{
+	struct dsi_display *dsi_display = display;
+
+	if (!dsi_display || !dsi_display->panel || !param_info)
+		return -EINVAL;
+	return dsi_panel_set_param(dsi_display->panel, param_info);
+}
+
 static int dsi_display_cmd_engine_enable(struct dsi_display *display)
 {
 	int rc = 0;
@@ -1287,6 +1296,73 @@ int dsi_display_cmd_receive(void *display, const char *cmd_buf,
 		*ts = cmd.ts;
 
 end:
+	mutex_unlock(&dsi_display->display_lock);
+	return rc;
+}
+
+int dsi_display_motUtil_transfer(void *display, const char *buf,
+				u32 len, struct motUtil *data)
+{
+	struct dsi_display *dsi_display = display;
+	struct mipi_dsi_msg msg = { 0 };
+	u8 payload[MAX_CMD_PAYLOAD_SIZE];
+	u32 tx_len;
+	bool state = false;
+	int rc;
+
+	if (!dsi_display || !dsi_display->panel || !dsi_display->host.ops ||
+	    !dsi_display->host.ops->transfer || !buf || !data || !data->rd_buf ||
+	    len < DISPUTIL_PAYLOAD || len > MAX_CMD_PAYLOAD_SIZE)
+		return -EINVAL;
+	tx_len = ((u8)buf[DISPUTIL_PAYLOAD_LEN_U] << 8) |
+		(u8)buf[DISPUTIL_PAYLOAD_LEN_L];
+	if (!tx_len || tx_len > len - DISPUTIL_PAYLOAD ||
+	    tx_len > sizeof(payload) ||
+	    (u8)buf[DISPUTIL_MIPI_CMD_TYPE] > DISPUTIL_DSI_GENERIC)
+		return -EINVAL;
+	if (buf[DISPUTIL_CMD_TYPE] == DISPUTIL_DSI_WRITE) {
+		if (buf[DISPUTIL_MIPI_CMD_TYPE] == DISPUTIL_DSI_DCS)
+			msg.type = tx_len == 1 ? 0x05 : tx_len == 2 ? 0x15 : 0x39;
+		else
+			msg.type = tx_len == 1 ? 0x03 : tx_len == 2 ? 0x13 : 0x29;
+		data->read_cmd = false;
+	} else if (buf[DISPUTIL_CMD_TYPE] == DISPUTIL_DSI_READ) {
+		if (buf[DISPUTIL_MIPI_CMD_TYPE] == DISPUTIL_DSI_DCS) {
+			if (tx_len != 1)
+				return -EINVAL;
+			msg.type = 0x06;
+		} else {
+			if (tx_len > 3)
+				return -EINVAL;
+			msg.type = tx_len == 1 ? 0x04 : tx_len == 2 ? 0x14 : 0x24;
+		}
+		msg.rx_len = (u8)buf[DISPUTIL_NUM_BYTE_RD];
+		if (!msg.rx_len)
+			return -EINVAL;
+		msg.rx_buf = data->rd_buf;
+		data->read_cmd = true;
+	} else {
+		return -EINVAL;
+	}
+	memcpy(payload, buf + DISPUTIL_PAYLOAD, tx_len);
+	msg.tx_buf = payload;
+	msg.tx_len = tx_len;
+	if (buf[DISPUTIL_CMD_XFER_MODE] == DISPUTIL_DSI_LP_MODE)
+		msg.flags |= MIPI_DSI_MSG_USE_LPM;
+	else if (buf[DISPUTIL_CMD_XFER_MODE] != DISPUTIL_DSI_HS_MODE)
+		return -EINVAL;
+
+	mutex_lock(&dsi_display->display_lock);
+	rc = dsi_display_ctrl_get_host_init_state(dsi_display, &state);
+	if (!rc && state) {
+		dsi_panel_acquire_panel_lock(dsi_display->panel);
+		rc = dsi_display->host.ops->transfer(&dsi_display->host, &msg);
+		dsi_panel_release_panel_lock(dsi_display->panel);
+	} else if (!rc) {
+		rc = -EPERM;
+	}
+	if (!rc && data->read_cmd)
+		rc = -EIO;
 	mutex_unlock(&dsi_display->display_lock);
 	return rc;
 }
@@ -5192,6 +5268,14 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 
 	if (mode->dsi_mode_flags &
 			(DSI_MODE_FLAG_DFPS | DSI_MODE_FLAG_VRR)) {
+		if (display->panel->dfps_caps.dfps_send_cmd_support &&
+		    display->panel->dfps_caps.dfps_send_cmd_with_te_async &&
+		    display->panel->dfps_caps.current_fps != 60 &&
+		    display->panel->dfps_caps.current_fps != 90) {
+			rc = dsi_display_status_check_te(display, 1);
+			if (rc < 0)
+				goto error;
+		}
 		display_for_each_ctrl(i, display) {
 			ctrl = &display->ctrl[i];
 
@@ -5234,6 +5318,11 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 				if (rc)
 					DSI_ERR("Fail to add timing params\n");
 			}
+		}
+		if (display->panel->dfps_caps.dfps_send_cmd_support) {
+			rc = dsi_panel_dfps_send_cmd(display->panel, mode);
+			if (rc)
+				goto error;
 		}
 		if (!(mode->dsi_mode_flags & DSI_MODE_FLAG_DYN_CLK))
 			return rc;
@@ -8815,7 +8904,22 @@ int dsi_display_enable(struct dsi_display *display)
 	 */
 	if (is_skip_op_required(display)) {
 
-		dsi_display_config_ctrl_for_cont_splash(display);
+		rc = dsi_display_config_ctrl_for_cont_splash(display);
+		if (rc && display->is_cont_splash_enabled) {
+			dsi_display_splash_res_cleanup(display);
+			return rc;
+		}
+		if (display->is_cont_splash_enabled &&
+		    display->panel->dfps_caps.dfps_send_cmd_support &&
+		    display->panel->cur_mode->timing.refresh_rate !=
+				display->panel->dfps_caps.panel_on_fps) {
+			rc = dsi_panel_dfps_send_cmd(display->panel,
+					 display->panel->cur_mode);
+			if (rc) {
+				dsi_display_splash_res_cleanup(display);
+				return rc;
+			}
+		}
 
 		rc = dsi_display_splash_res_cleanup(display);
 		if (rc) {
@@ -8825,6 +8929,7 @@ int dsi_display_enable(struct dsi_display *display)
 		}
 
 		display->panel->panel_initialized = true;
+		display->panel->panel_send_cmd = true;
 		DSI_DEBUG("cont splash enabled, display enable not required\n");
 		dsi_display_panel_id_notification(display);
 
@@ -8848,6 +8953,16 @@ int dsi_display_enable(struct dsi_display *display)
 			DSI_ERR("[%s] failed to enable DSI panel, rc=%d\n",
 			       display->name, rc);
 			goto error;
+		}
+		if (display->panel->dfps_caps.dfps_send_cmd_support) {
+			display->panel->dfps_caps.current_fps =
+				display->panel->dfps_caps.panel_on_fps;
+			if (mode->timing.refresh_rate !=
+			    display->panel->dfps_caps.panel_on_fps) {
+				rc = dsi_panel_dfps_send_cmd(display->panel, mode);
+				if (rc)
+					goto error_disable_panel;
+			}
 		}
 	}
 	dsi_display_panel_id_notification(display);
@@ -9058,6 +9173,7 @@ int dsi_display_disable(struct dsi_display *display)
 	if (is_skip_op_required(display)) {
 		/* applicable only for trusted vm */
 		display->panel->panel_initialized = false;
+		display->panel->panel_send_cmd = false;
 		display->panel->power_mode = SDE_MODE_DPMS_OFF;
 	}
 	mutex_unlock(&display->display_lock);
