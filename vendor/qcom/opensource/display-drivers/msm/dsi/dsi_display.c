@@ -8429,6 +8429,7 @@ static void dsi_display_unregister_error_handler(struct dsi_display *display)
 int dsi_display_prepare(struct dsi_display *display)
 {
 	int rc = 0;
+	bool panel_prepared = false;
 	struct dsi_display_mode *mode;
 
 	if (!display) {
@@ -8492,6 +8493,7 @@ int dsi_display_prepare(struct dsi_display *display)
 					display->name, rc);
 			goto error;
 		}
+		panel_prepared = true;
 	}
 
 	rc = dsi_display_clk_ctrl(display->dsi_clk_handle,
@@ -8586,7 +8588,8 @@ error_ctrl_clk_off:
 	(void)dsi_display_clk_ctrl(display->dsi_clk_handle,
 			DSI_CORE_CLK, DSI_CLK_OFF);
 error_panel_post_unprep:
-	(void)dsi_panel_post_unprepare(display->panel);
+	if (panel_prepared)
+		(void)dsi_panel_post_unprepare(display->panel);
 error:
 	mutex_unlock(&display->display_lock);
 	SDE_EVT32(SDE_EVTLOG_FUNC_EXIT);
@@ -8903,24 +8906,17 @@ int dsi_display_enable(struct dsi_display *display)
 	 * resource/trusted vm and hence we return early
 	 */
 	if (is_skip_op_required(display)) {
+		DSI_INFO("handoff splash=%d initialized=%d mode=%u Hz panel_fps=%u\n",
+			display->is_cont_splash_enabled,
+			display->panel->panel_initialized,
+			display->panel->cur_mode->timing.refresh_rate,
+			display->panel->dfps_caps.current_fps);
 
 		rc = dsi_display_config_ctrl_for_cont_splash(display);
 		if (rc && display->is_cont_splash_enabled) {
 			dsi_display_splash_res_cleanup(display);
 			return rc;
 		}
-		if (display->is_cont_splash_enabled &&
-		    display->panel->dfps_caps.dfps_send_cmd_support &&
-		    display->panel->cur_mode->timing.refresh_rate !=
-				display->panel->dfps_caps.panel_on_fps) {
-			rc = dsi_panel_dfps_send_cmd(display->panel,
-					 display->panel->cur_mode);
-			if (rc) {
-				dsi_display_splash_res_cleanup(display);
-				return rc;
-			}
-		}
-
 		rc = dsi_display_splash_res_cleanup(display);
 		if (rc) {
 			DSI_ERR("Continuous splash res cleanup failed, rc=%d\n",
@@ -8939,6 +8935,8 @@ int dsi_display_enable(struct dsi_display *display)
 	mutex_lock(&display->display_lock);
 
 	mode = display->panel->cur_mode;
+	DSI_INFO("normal enable mode=%u Hz initialized=%d\n",
+		 mode->timing.refresh_rate, display->panel->panel_initialized);
 
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
 		rc = dsi_panel_post_switch(display->panel);
@@ -8970,6 +8968,7 @@ int dsi_display_enable(struct dsi_display *display)
 	if ((mode->priv_info->dsc_enabled ||
 			mode->priv_info->vdc_enabled) &&
 		!(mode->dsi_mode_flags & DSI_MODE_FLAG_DMS_FPS)) {
+		DSI_INFO("programming PPS at %u Hz\n", mode->timing.refresh_rate);
 		rc = dsi_panel_update_pps(display->panel);
 		if (rc) {
 			DSI_ERR("[%s] panel pps cmd update failed, rc=%d\n",

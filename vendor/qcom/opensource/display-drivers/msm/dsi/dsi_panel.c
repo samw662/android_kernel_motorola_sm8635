@@ -375,6 +375,8 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		DSI_ERR("[%s] failed to set pinctrl, rc=%d\n", panel->name, rc);
 		goto error_disable_vregs;
 	}
+	if (panel->lp11_init)
+		goto exit;
 
 	rc = dsi_panel_reset(panel);
 	if (rc) {
@@ -543,9 +545,12 @@ int dsi_panel_dfps_send_cmd(struct dsi_panel *panel,
 			usleep_range(cmd->post_wait_ms * 1000,
 				     cmd->post_wait_ms * 1000 + 10);
 	}
-	panel->dfps_caps.current_fps = mode->timing.refresh_rate;
 	rc = 0;
 out:
+	DSI_INFO("DFPS %u -> %u Hz rc=%d\n", panel->dfps_caps.current_fps,
+		 mode->timing.refresh_rate, rc);
+	if (!rc)
+		panel->dfps_caps.current_fps = mode->timing.refresh_rate;
 	if (rc)
 		DSI_ERR("[%s] DFPS command for %u Hz failed: %d\n",
 			panel->name, mode->timing.refresh_rate, rc);
@@ -5218,10 +5223,6 @@ int dsi_panel_pre_prepare(struct dsi_panel *panel)
 
 	mutex_lock(&panel->panel_lock);
 
-	/* If LP11_INIT is set, panel will be powered up during prepare() */
-	if (panel->lp11_init)
-		goto error;
-
 	rc = dsi_panel_power_on(panel);
 	if (rc) {
 		DSI_ERR("[%s] panel power on failed, rc=%d\n", panel->name, rc);
@@ -5377,7 +5378,7 @@ int dsi_panel_prepare(struct dsi_panel *panel)
 	mutex_lock(&panel->panel_lock);
 
 	if (panel->lp11_init) {
-		rc = dsi_panel_power_on(panel);
+		rc = dsi_panel_reset(panel);
 		if (rc) {
 			DSI_ERR("[%s] panel power on failed, rc=%d\n",
 			       panel->name, rc);
@@ -5733,6 +5734,7 @@ int dsi_panel_enable(struct dsi_panel *panel)
 	}
 	panel->panel_initialized = true;
 	panel->panel_send_cmd = true;
+	DSI_INFO("panel initialization complete\n");
 	for (i = 0; i < PARAM_ID_NUM; i++)
 		panel->param_cmds[i].value =
 			panel->param_cmds[i].default_value;
