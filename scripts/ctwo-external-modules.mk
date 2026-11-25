@@ -239,12 +239,12 @@ check-panel-notifier: check-inputs
 
 b5-touchscreen: check-panel-notifier b2-sensors-class b2-mmi-relay
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/input/touchscreen/touchscreen_mmi \
-	  CONFIG_DRM_PANEL_EVENT_NOTIFICATIONS=m \
+	  CONFIG_DRM_PANEL_EVENT_NOTIFICATIONS=m CONFIG_BOARD_USES_DOUBLE_TAP_CTRL=y CONFIG_TOUCHSCREEN_DEVICE_VIRTUAL_PATH=y \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/sensors/Module.symvers $(KERNEL_OUT)/drivers/mmi_relay/Module.symvers' modules
 
 b5-goodix: b5-touchscreen b2-mmi-info
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/input/touchscreen/goodix_berlin_mmi \
-	  TARGET_PRODUCT=ctwo CONFIG_DRM_PANEL_EVENT_NOTIFICATIONS=m CONFIG_INPUT_TOUCHSCREEN_MMI=m CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI=y CONFIG_GTP_FOD=y \
+	  TARGET_PRODUCT=ctwo CONFIG_DRM_PANEL_EVENT_NOTIFICATIONS=m CONFIG_INPUT_TOUCHSCREEN_MMI=m CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI=y CONFIG_GTP_FOD=y CONFIG_BOARD_USES_DOUBLE_TAP_CTRL=y \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/mmi_info/Module.symvers $(KERNEL_OUT)/drivers/input/touchscreen/touchscreen_mmi/Module.symvers' modules
 
 b5-st21nfc: b2-mmi-info
