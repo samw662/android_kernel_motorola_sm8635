@@ -15,6 +15,14 @@ config ZRAM
 
 	  See Documentation/admin-guide/blockdev/zram.rst for more information.
 
+config ZRAM_MOTO_SWAP
+	bool "Build zram as moto_swap"
+	depends on ZRAM=m
+	help
+	  Build the native zram driver as moto_swap.ko for devices whose
+	  vendor initialization loads that module name. Only one zram
+	  provider is built.
+
 choice
 	prompt "Default zram compressor"
 	default ZRAM_DEF_COMP_LZORLE
