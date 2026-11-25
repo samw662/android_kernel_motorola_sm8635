@@ -105,26 +105,39 @@ struct FPS_data {
 	struct notifier_block   relay_notif;
 } *fpsData;
 #endif
-static void gf_enable_irq(struct gf_dev *gf_dev)
+/* Callers hold device_list_lock while changing the IRQ and wake state. */
+static int gf_enable_irq(struct gf_dev *gf_dev)
 {
-	if (gf_dev->irq_enabled) {
-		pr_warn("IRQ has been enabled.\n");
-	} else {
-		enable_irq_wake(gf_dev->irq);
-		enable_irq(gf_dev->irq);
-		gf_dev->irq_enabled = 1;
-	}
+	int ret;
+
+	if (gf_dev->irq < 0)
+		return -ENODEV;
+	if (gf_dev->irq_enabled)
+		return 0;
+
+	ret = enable_irq_wake(gf_dev->irq);
+	if (ret)
+		return ret;
+	enable_irq(gf_dev->irq);
+	gf_dev->irq_enabled = 1;
+	return 0;
 }
 
-static void gf_disable_irq(struct gf_dev *gf_dev)
+static int gf_disable_irq(struct gf_dev *gf_dev)
 {
-	if (gf_dev->irq_enabled) {
-		gf_dev->irq_enabled = 0;
-		disable_irq(gf_dev->irq);
-		disable_irq_wake(gf_dev->irq);
-	} else {
-		pr_warn("IRQ has been disabled.\n");
-	}
+	int ret;
+
+	if (gf_dev->irq < 0)
+		return 0;
+	if (!gf_dev->irq_enabled)
+		return 0;
+
+	ret = disable_irq_wake(gf_dev->irq);
+	if (ret)
+		return ret;
+	disable_irq(gf_dev->irq);
+	gf_dev->irq_enabled = 0;
+	return 0;
 }
 #ifdef MMI_RELAY_MODULE
 static int fps_mmi_relay_cb(struct notifier_block *self,
@@ -476,6 +489,11 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 	if (retval)
 		return -EFAULT;
+	mutex_lock(&device_list_lock);
+	if (gf_dev->irq < 0) {
+		mutex_unlock(&device_list_lock);
+		return -ENODEV;
+	}
 
 	switch (cmd) {
 	case GF_IOC_INIT:
@@ -492,12 +510,12 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 	case GF_IOC_DISABLE_IRQ:
 		pr_debug("%s GF_IOC_DISABEL_IRQ\n", __func__);
-		gf_disable_irq(gf_dev);
+		retval = gf_disable_irq(gf_dev);
 		break;
 
 	case GF_IOC_ENABLE_IRQ:
 		pr_debug("%s GF_IOC_ENABLE_IRQ\n", __func__);
-		gf_enable_irq(gf_dev);
+		retval = gf_enable_irq(gf_dev);
 		break;
 
 	case GF_IOC_RESET:
@@ -596,6 +614,7 @@ static long gf_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		break;
 	}
 
+	mutex_unlock(&device_list_lock);
 	return retval;
 }
 
@@ -642,14 +661,15 @@ static int gf_open(struct inode *inode, struct file *filp)
 	}
 
 	if (status == 0) {
+		if (!gf_dev->users)
+			status = gf_enable_irq(gf_dev);
+		if (!status) {
 			gf_dev->users++;
 			filp->private_data = gf_dev;
 			nonseekable_open(inode, filp);
-			pr_info("Succeed to open device. irq = %d\n",
-					gf_dev->irq);
-			if (gf_dev->users == 1)
-				gf_enable_irq(gf_dev);
+			pr_info("Succeed to open device. irq = %d\n", gf_dev->irq);
 			gf_hw_reset(gf_dev, 3);
+		}
 	} else {
 		pr_info("No device for minor %d\n", iminor(inode));
 	}
@@ -680,11 +700,11 @@ static int gf_release(struct inode *inode, struct file *filp)
 
 	/*last close?? */
 	gf_dev->users--;
-	if (!gf_dev->users) {
+	if (!gf_dev->users && gf_dev->irq >= 0) {
 		pr_info("disable_irq. irq = %d\n", gf_dev->irq);
-		gf_disable_irq(gf_dev);
-		/*power off the sensor*/
-		gf_power_off(gf_dev);
+		status = gf_disable_irq(gf_dev);
+		if (!status)
+			gf_power_off(gf_dev);
 	}
 	mutex_unlock(&device_list_lock);
 	return status;
@@ -815,6 +835,8 @@ static int gf_probe(struct platform_device *pdev)
 	gf_dev->irq_gpio = -EINVAL;
 	gf_dev->reset_gpio = -EINVAL;
 	gf_dev->pwr_gpio = -EINVAL;
+	gf_dev->irq = -1;
+	gf_dev->irq_enabled = 0;
 
 	gf_dev->fb_black = 0;
 
@@ -842,11 +864,12 @@ static int gf_probe(struct platform_device *pdev)
 
 	if (status == 0) {
 		set_bit(minor, minors);
-		list_add(&gf_dev->device_entry, &device_list);
 	} else {
 		gf_dev->devt = 0;
 	}
 	mutex_unlock(&device_list_lock);
+	if (status)
+		goto error_dev;
 
 	if (status == 0) {
 		/*input device subsystem */
@@ -902,8 +925,8 @@ static int gf_probe(struct platform_device *pdev)
 		goto err_irq;
 	}
 
-	//gf_dev->irq_enabled = 1;
-	gf_disable_irq(gf_dev);
+	/* request_threaded_irq() enables the line; no wake vote exists yet. */
+	disable_irq(gf_dev->irq);
 	device_init_wakeup(dev, true);
 #ifdef MMI_RELAY_MODULE
 	fpsData = FPS_init(dev);
@@ -913,6 +936,9 @@ static int gf_probe(struct platform_device *pdev)
 		pr_err("failed to create sysfs group. %d\n", status);
 		goto err_sysfs;
 	}
+	mutex_lock(&device_list_lock);
+	list_add(&gf_dev->device_entry, &device_list);
+	mutex_unlock(&device_list_lock);
 
 	pr_info("version V%d.%d.%02d.%02d\n", VER_MAJOR,
 		VER_MINOR, PATCH_LEVEL, EXTEND_VER);
@@ -921,10 +947,11 @@ static int gf_probe(struct platform_device *pdev)
 	return status;
 err_sysfs:
 	device_init_wakeup(dev, false);
-	if (gf_dev->irq)
-		free_irq(gf_dev->irq, gf_dev);
+	free_irq(gf_dev->irq, gf_dev);
+	gf_dev->irq = -1;
 err_irq:
-		input_unregister_device(gf_dev->input);
+	input_unregister_device(gf_dev->input);
+	gf_dev->input = NULL;
 #ifdef AP_CONTROL_CLK
 gfspi_probe_clk_enable_failed:
 	gfspi_ioctl_clk_uninit(gf_dev);
@@ -938,7 +965,8 @@ error_dev:
 	if (gf_dev->devt != 0) {
 		pr_info("Err: status = %d\n", status);
 		mutex_lock(&device_list_lock);
-		list_del(&gf_dev->device_entry);
+		if (!list_empty(&gf_dev->device_entry))
+			list_del(&gf_dev->device_entry);
 		device_destroy(gf_class, gf_dev->devt);
 		clear_bit(MINOR(gf_dev->devt), minors);
 		mutex_unlock(&device_list_lock);
@@ -958,23 +986,26 @@ static int gf_remove(struct platform_device *pdev)
 {
 	struct gf_dev *gf_dev = &gf;
 	struct device *dev = &gf_dev->spi->dev;
+	int ret;
 
 	sysfs_remove_group(&dev->kobj, &attribute_group);
-	device_init_wakeup(dev, false);
-	/* make sure ops on existing fds can abort cleanly */
-	if (gf_dev->irq)
-		free_irq(gf_dev->irq, gf_dev);
-
-	if (gf_dev->input != NULL)
-		input_unregister_device(gf_dev->input);
-
 	/* prevent new opens */
 	mutex_lock(&device_list_lock);
 	list_del(&gf_dev->device_entry);
 	device_destroy(gf_class, gf_dev->devt);
 	clear_bit(MINOR(gf_dev->devt), minors);
-	if (gf_dev->users == 0)
-		gf_cleanup(gf_dev);
+	if (gf_dev->irq >= 0) {
+		if (gf_dev->irq_enabled) {
+			ret = disable_irq_wake(gf_dev->irq);
+			if (ret)
+				dev_warn(dev, "failed to disable IRQ wake: %d\n", ret);
+		}
+		free_irq(gf_dev->irq, gf_dev);
+		gf_dev->irq = -1;
+		gf_dev->irq_enabled = 0;
+	}
+	mutex_unlock(&device_list_lock);
+	device_init_wakeup(dev, false);
 #if defined(CONFIG_GOODIX_DRM_PANEL_NOTIFICATIONS)
 	if (gf_dev->active_panel)
 	{
@@ -984,7 +1015,11 @@ static int gf_remove(struct platform_device *pdev)
 #else
 	fb_unregister_client(&gf_dev->notifier);
 #endif
-	mutex_unlock(&device_list_lock);
+	if (gf_dev->input != NULL) {
+		input_unregister_device(gf_dev->input);
+		gf_dev->input = NULL;
+	}
+	gf_cleanup(gf_dev);
 
 	return 0;
 }
