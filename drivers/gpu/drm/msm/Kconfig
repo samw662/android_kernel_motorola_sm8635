@@ -19,7 +19,7 @@ config DRM_MSM
 	select DRM_PANEL
 	select DRM_BRIDGE
 	select DRM_PANEL_BRIDGE
-	select DRM_SCHED
+	select DRM_SCHED if !DRM_MSM_EXTERNAL
 	select SHMEM
 	select TMPFS
 	select QCOM_SCM
