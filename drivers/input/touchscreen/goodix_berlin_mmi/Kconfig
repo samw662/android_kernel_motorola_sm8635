@@ -10,11 +10,8 @@ menuconfig TOUCHSCREEN_GOODIX_BRL
 	  If build module, say M.
 	  If unsure, say N.
 
-if TOUCHSCREEN_GOODIX_BRL
-
 config TOUCHSCREEN_GOODIX_BRL_SPI
 	bool "support SPI bus connection"
+	depends on SPI && TOUCHSCREEN_GOODIX_BRL != n
 	help
 		Say Y here if the touchscreen is connected via SPI bus.
-
-endif
