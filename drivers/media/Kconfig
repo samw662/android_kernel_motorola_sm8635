@@ -227,6 +227,20 @@ config MSM_VIDC_V4L2
 	help
 	  Select the external Qualcomm VIDC V4L2 module for CTWO.
 
+config MOT_SENSOR_STRICT_PERFRAMECONTROL
+	bool "Motorola strict per-frame camera sensor control"
+	depends on ARCH_CLIFFS && MEDIA_CAMERA_SUPPORT && VIDEO_DEV
+	help
+	  Enable Motorola's strict per-frame sensor packet and request-manager
+	  handling used by the CTWO camera HAL.
+
+config MOT_SENSOR_PRE_POWERUP
+	bool "Motorola camera sensor pre-power control"
+	depends on ARCH_CLIFFS && MEDIA_CAMERA_SUPPORT && VIDEO_DEV
+	help
+	  Enable Motorola's sensor pre-power and status ioctls used by the
+	  CTWO camera HAL.
+
 source "drivers/media/mmc/Kconfig"
 endif
 
