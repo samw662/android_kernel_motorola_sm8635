@@ -28,3 +28,5 @@ config IPA_OUT_OF_TREE
 	help
 	  Use the headers of the external Qualcomm IPA driver when building
 	  the WLAN module.
+
+source "vendor/qcom/opensource/dataipa/config/Kconfig"
