@@ -33,6 +33,13 @@ config DRM_MIPI_DBI
 	depends on DRM
 	select DRM_KMS_HELPER
 
+config DRM_PANEL_EVENT_NOTIFICATIONS
+	tristate "DRM panel event notifications for Motorola touchscreens"
+	depends on QCOM_PANEL_EVENT_NOTIFIER
+	help
+	  Enable the panel event notification path used by the external
+	  Motorola touchscreen modules.
+
 config DRM_MIPI_DSI
 	bool
 	depends on DRM
