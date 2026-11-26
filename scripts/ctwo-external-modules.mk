@@ -28,7 +28,7 @@ check-inputs:
 securemsm: check-inputs
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/securemsm-kernel \
 	  SSG_MODULE_ROOT=$(KERNEL_SRC)/$(VENDOR)/securemsm-kernel \
-	  CONFIG_QSEECOM=n BOARD_PLATFORM=pineapple modules
+	  BOARD_PLATFORM=pineapple modules
 
 mmrm: check-inputs
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/mmrm-driver \
@@ -150,7 +150,7 @@ b2-display: mmrm hw-fence sync-fence ext-display securemsm
 
 .PHONY: b2-dataipa
 b2-dataipa: rmnet-mem
-	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/dataipa CONFIG_IPA_KERNEL_TESTS_MODULE=n \
+	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/dataipa \
 	  KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/datarmnet-ext/mem/Module.symvers modules
 
 .PHONY: b3-bluetooth
@@ -225,11 +225,6 @@ b3-utags: check-inputs
 b5-audio: ext-display
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/audio-kernel \
 	  AUDIO_ROOT=$(KERNEL_SRC)/$(VENDOR)/audio-kernel MODNAME=audio_dlkm BOARD_PLATFORM=pineapple \
-	  CONFIG_SND_SOC_PINEAPPLE=m CONFIG_SND_SOC_WSA884X=m CONFIG_SND_SOC_WSA883X=m \
-	  CONFIG_SND_SOC_WCD9XXX_V2=m CONFIG_SND_SOC_WCD937X=m CONFIG_SND_SOC_WCD937X_SLAVE=m \
-	  CONFIG_SND_SOC_WCD938X=m CONFIG_SND_SOC_WCD938X_SLAVE=m CONFIG_SND_SOC_WCD939X=m CONFIG_SND_SOC_WCD939X_SLAVE=m \
-	  CONFIG_SND_SOC_WCD_MBHC=m CONFIG_SND_SWR_HAPTICS=m CONFIG_SND_SOC_MSM_STUB=m \
-	  CONFIG_SND_SOC_MSM_HDMI_CODEC_RX=m CONFIG_SND_SOC_SWR_DMIC=m \
 	  KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/mm-drivers/msm_ext_display/Module.symvers modules
 
 .PHONY: b5-touchscreen b5-goodix b5-st21nfc b5-sx937x check-panel-notifier
@@ -276,7 +271,7 @@ wlan: wlan-platform b2-dataipa
 	  { printf '%s\n' 'Set WLAN_PROFILE to the verified device profile' >&2; exit 1; }
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/wlan/qcacld-3.0 \
 	  MODNAME=qca_cld3_kiwi_v2 DEVNAME=kiwi_v2 DYNAMIC_SINGLE_CHIP=kiwi_v2 \
-	  CONFIG_QCA_CLD_WLAN=m WLAN_ROOT=$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0 \
+	  WLAN_ROOT=$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0 \
 	  WLAN_COMMON_INC=$(KERNEL_SRC)/$(VENDOR)/wlan/qca-wifi-host-cmn \
 	  WLAN_FW_API=$(KERNEL_SRC)/$(VENDOR)/wlan/fw-api WLAN_PROFILE=$(WLAN_PROFILE) \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/dataipa/Module.symvers $(KERNEL_OUT)/$(VENDOR)/wlan/platform/Module.symvers' modules
