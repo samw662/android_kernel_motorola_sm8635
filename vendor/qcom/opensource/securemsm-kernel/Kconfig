@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config QSEECOM
+	tristate "Qualcomm QSEECom external module"
+	depends on ARCH_QCOM && QCOM_SCM
+	help
+	  Build the Qualcomm secure execution environment communication
+	  driver as an external module.

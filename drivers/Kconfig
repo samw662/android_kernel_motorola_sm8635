@@ -227,6 +227,7 @@ source "drivers/fpga/Kconfig"
 source "drivers/fsi/Kconfig"
 
 source "drivers/tee/Kconfig"
+source "vendor/qcom/opensource/securemsm-kernel/Kconfig"
 
 source "drivers/mux/Kconfig"
 
