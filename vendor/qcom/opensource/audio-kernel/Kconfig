@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+menu "Qualcomm external audio modules"
+	depends on ARCH_QCOM
+	# Pineapple's external audio profile supplies SoundWire and codec modules;
+	# CTWO does not enable the in-tree SoundWire controller.
+
+config SND_SOC_PINEAPPLE
+	tristate "Qualcomm Pineapple audio machine driver"
+	depends on ARCH_PINEAPPLE
+	help
+	  Build the external Pineapple audio machine module.
+
+config SND_SOC_WSA884X
+	tristate "Qualcomm WSA884x external codec"
+
+config SND_SOC_WCD9XXX_V2
+	tristate "Qualcomm WCD9xxx v2 external codec core"
+
+config SND_SOC_WCD937X
+	tristate "Qualcomm WCD937x external codec"
+
+config SND_SOC_WCD937X_SLAVE
+	tristate "Qualcomm WCD937x external slave codec"
+	depends on SND_SOC_WCD937X
+
+config SND_SOC_WCD938X_SLAVE
+	tristate "Qualcomm WCD938x external slave codec"
+
+config SND_SOC_WCD939X
+	tristate "Qualcomm WCD939x external codec"
+
+config SND_SOC_WCD939X_SLAVE
+	tristate "Qualcomm WCD939x external slave codec"
+	depends on SND_SOC_WCD939X
+
+config SND_SWR_HAPTICS
+	tristate "Qualcomm SoundWire external haptics"
+
+config SND_SOC_MSM_STUB
+	tristate "Qualcomm external audio stub codec"
+
+config SND_SOC_MSM_HDMI_CODEC_RX
+	tristate "Qualcomm external HDMI receiver codec"
+
+config SND_SOC_SWR_DMIC
+	tristate "Qualcomm external SoundWire digital microphones"
+
+endmenu
