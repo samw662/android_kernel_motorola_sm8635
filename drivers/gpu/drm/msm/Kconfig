@@ -31,6 +31,14 @@ config DRM_MSM
 	help
 	  DRM/KMS driver for MSM/snapdragon.
 
+config DRM_MSM_EXTERNAL
+	bool "Use external Qualcomm MSM DRM driver"
+	depends on ARCH_QCOM && DRM_MSM != n
+	default y if ARCH_CLIFFS
+	help
+	  Build the Qualcomm MSM display driver as an external module
+	  instead of the in-tree MSM DRM module.
+
 config DRM_MSM_HELPER
        tristate "DRM MSM HELPER"
        select DRM_DP_AUX_BUS

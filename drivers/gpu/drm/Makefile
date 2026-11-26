@@ -117,7 +117,9 @@ obj-$(CONFIG_DRM_SUN4I) += sun4i/
 obj-y			+= tilcdc/
 obj-$(CONFIG_DRM_QXL) += qxl/
 obj-$(CONFIG_DRM_VIRTIO_GPU) += virtio/
+ifneq ($(CONFIG_DRM_MSM_EXTERNAL),y)
 obj-$(CONFIG_DRM_MSM) += msm/
+endif
 obj-$(CONFIG_DRM_TEGRA) += tegra/
 obj-$(CONFIG_DRM_STM) += stm/
 obj-$(CONFIG_DRM_STI) += sti/
