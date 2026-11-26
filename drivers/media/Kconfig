@@ -220,6 +220,13 @@ source "drivers/media/radio/Kconfig"
 
 if MEDIA_PLATFORM_SUPPORT
 source "drivers/media/platform/Kconfig"
+
+config MSM_VIDC_V4L2
+	tristate "Qualcomm VIDC V4L2 video driver"
+	depends on VIDEO_DEV
+	help
+	  Select the external Qualcomm VIDC V4L2 module for CTWO.
+
 source "drivers/media/mmc/Kconfig"
 endif
 
