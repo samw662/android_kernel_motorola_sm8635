@@ -56,7 +56,7 @@ dsp: check-inputs
 
 graphics: hw-fence
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/graphics-kernel \
-	  KGSL_PATH=$(KERNEL_SRC)/$(VENDOR)/graphics-kernel CONFIG_QCOM_KGSL=m \
+	  KGSL_PATH=$(KERNEL_SRC)/$(VENDOR)/graphics-kernel \
 	  BOARD_PLATFORM=pineapple \
 	  KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/mm-drivers/hw_fence/Module.symvers modules
 
@@ -73,7 +73,7 @@ b2-bm-adsp-ulog: check-inputs
 .PHONY: b2-goodix-fod
 b2-goodix-fod: b2-mmi-relay
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/input/misc/goodix_fod_mmi \
-	  CONFIG_MMI_RELAY=m KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/mmi_relay/Module.symvers modules
+	  KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/mmi_relay/Module.symvers modules
 
 .PHONY: b2-mmi-annotate
 b2-mmi-annotate: check-inputs
@@ -145,7 +145,7 @@ b2-camera: mmrm synx securemsm
 .PHONY: b2-display
 b2-display: mmrm hw-fence sync-fence ext-display securemsm
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/display-drivers \
-	  DISPLAY_ROOT=$(KERNEL_SRC)/$(VENDOR)/display-drivers KERNEL_ROOT=$(KERNEL_SRC) CONFIG_DRM_MSM=m MODNAME=msm_drm BOARD_PLATFORM=pineapple \
+	  DISPLAY_ROOT=$(KERNEL_SRC)/$(VENDOR)/display-drivers KERNEL_ROOT=$(KERNEL_SRC) MODNAME=msm_drm BOARD_PLATFORM=pineapple \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/mmrm-driver/Module.symvers $(KERNEL_OUT)/$(VENDOR)/mm-drivers/hw_fence/Module.symvers $(KERNEL_OUT)/$(VENDOR)/mm-drivers/sync_fence/Module.symvers $(KERNEL_OUT)/$(VENDOR)/mm-drivers/msm_ext_display/Module.symvers $(KERNEL_OUT)/$(VENDOR)/securemsm-kernel/Module.symvers' modules
 
 .PHONY: b2-dataipa
@@ -155,11 +155,11 @@ b2-dataipa: rmnet-mem
 
 .PHONY: b3-bluetooth
 b3-bluetooth: securemsm wlan-platform
-	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/bt-kernel BT_ROOT=$(KERNEL_SRC)/$(VENDOR)/bt-kernel BT_KERNEL_ROOT=$(KERNEL_SRC)/$(VENDOR)/bt-kernel CONFIG_MSM_BT_POWER=m CONFIG_BTFM_SLIM=m CONFIG_BT_HW_SECURE_DISABLE=y BOARD_PLATFORM=pineapple 'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/securemsm-kernel/Module.symvers $(KERNEL_OUT)/$(VENDOR)/wlan/platform/Module.symvers' modules
+	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/bt-kernel BT_ROOT=$(KERNEL_SRC)/$(VENDOR)/bt-kernel BT_KERNEL_ROOT=$(KERNEL_SRC)/$(VENDOR)/bt-kernel BOARD_PLATFORM=pineapple 'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/securemsm-kernel/Module.symvers $(KERNEL_OUT)/$(VENDOR)/wlan/platform/Module.symvers' modules
 
 .PHONY: b3-video
 b3-video: mmrm hw-fence
-	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/video-driver/msm_video VIDEO_ROOT=$(KERNEL_SRC)/$(VENDOR)/video-driver CONFIG_MSM_VIDC_V4L2=m 'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/mmrm-driver/Module.symvers $(KERNEL_OUT)/$(VENDOR)/mm-drivers/hw_fence/Module.symvers' modules
+	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/video-driver/msm_video VIDEO_ROOT=$(KERNEL_SRC)/$(VENDOR)/video-driver 'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/mmrm-driver/Module.symvers $(KERNEL_OUT)/$(VENDOR)/mm-drivers/hw_fence/Module.symvers' modules
 
 .PHONY: b3-eva
 b3-eva: mmrm synx dsp
@@ -203,7 +203,7 @@ b3-qti-charger: b3-mmi-charger b2-bm-adsp-ulog
 
 .PHONY: b3-adaptive-charge
 b3-adaptive-charge: b3-mmi-charger
-	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/power/qpnp_adaptive_charge CONFIG_USE_MMI_CHARGER=y KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/power/mmi_charger/Module.symvers modules
+	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/power/qpnp_adaptive_charge KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/power/mmi_charger/Module.symvers modules
 
 .PHONY: b3-lpd-mitigate
 b3-lpd-mitigate: b3-qti-charger b2-mmi-relay
@@ -239,12 +239,11 @@ check-panel-notifier: check-inputs
 
 b5-touchscreen: check-panel-notifier b2-sensors-class b2-mmi-relay
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/input/touchscreen/touchscreen_mmi \
-	  CONFIG_DRM_PANEL_EVENT_NOTIFICATIONS=m CONFIG_BOARD_USES_DOUBLE_TAP_CTRL=y CONFIG_TOUCHSCREEN_DEVICE_VIRTUAL_PATH=y \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/sensors/Module.symvers $(KERNEL_OUT)/drivers/mmi_relay/Module.symvers' modules
 
 b5-goodix: b5-touchscreen b2-mmi-info
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=drivers/input/touchscreen/goodix_berlin_mmi \
-	  TARGET_PRODUCT=ctwo CONFIG_DRM_PANEL_EVENT_NOTIFICATIONS=m CONFIG_INPUT_TOUCHSCREEN_MMI=m CONFIG_TOUCHSCREEN_GOODIX_BRL_SPI=y CONFIG_GTP_FOD=y CONFIG_BOARD_USES_DOUBLE_TAP_CTRL=y \
+	  TARGET_PRODUCT=ctwo \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/drivers/mmi_info/Module.symvers $(KERNEL_OUT)/drivers/input/touchscreen/touchscreen_mmi/Module.symvers' modules
 
 b5-st21nfc: b2-mmi-info
@@ -277,7 +276,7 @@ wlan: wlan-platform b2-dataipa
 	  { printf '%s\n' 'Set WLAN_PROFILE to the verified device profile' >&2; exit 1; }
 	+$(MAKE) -C $(KERNEL_SRC) $(KBUILD_ARGS) M=$(VENDOR)/wlan/qcacld-3.0 \
 	  MODNAME=qca_cld3_kiwi_v2 DEVNAME=kiwi_v2 DYNAMIC_SINGLE_CHIP=kiwi_v2 \
-	  CONFIG_QCA_CLD_WLAN=m CONFIG_IPA_OUT_OF_TREE=y WLAN_ROOT=$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0 \
+	  CONFIG_QCA_CLD_WLAN=m WLAN_ROOT=$(KERNEL_SRC)/$(VENDOR)/wlan/qcacld-3.0 \
 	  WLAN_COMMON_INC=$(KERNEL_SRC)/$(VENDOR)/wlan/qca-wifi-host-cmn \
 	  WLAN_FW_API=$(KERNEL_SRC)/$(VENDOR)/wlan/fw-api WLAN_PROFILE=$(WLAN_PROFILE) \
 	  'KBUILD_EXTRA_SYMBOLS=$(KERNEL_OUT)/$(VENDOR)/dataipa/Module.symvers $(KERNEL_OUT)/$(VENDOR)/wlan/platform/Module.symvers' modules
