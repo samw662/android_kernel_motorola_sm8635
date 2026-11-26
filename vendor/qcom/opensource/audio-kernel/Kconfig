@@ -5,6 +5,12 @@ menu "Qualcomm external audio modules"
 	# Pineapple's external audio profile supplies SoundWire and codec modules;
 	# CTWO does not enable the in-tree SoundWire controller.
 
+config SND_SOC_QCOM_EXTERNAL_AUDIO
+	bool "Use external Qualcomm audio codecs"
+	default y if ARCH_CLIFFS
+	help
+	  Use the Qualcomm audio modules instead of in-tree codec modules.
+
 config SND_SOC_PINEAPPLE
 	tristate "Qualcomm Pineapple audio machine driver"
 	depends on ARCH_PINEAPPLE

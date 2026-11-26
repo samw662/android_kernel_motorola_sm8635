@@ -1759,7 +1759,7 @@ config SND_SOC_WCD9335
 	  including the MSM8996, MSM8976, and MSM8956 chipsets.
 
 config SND_SOC_WCD_MBHC
-	tristate
+	tristate "External Qualcomm WCD MBHC" if SND_SOC_QCOM_EXTERNAL_AUDIO
 
 config SND_SOC_WCD934X
 	tristate "WCD9340/WCD9341 Codec"
@@ -1773,8 +1773,8 @@ config SND_SOC_WCD934X
 	  Qualcomm SoCs like SDM845.
 
 config SND_SOC_WCD938X
-	depends on SND_SOC_WCD938X_SDW
-	tristate
+	depends on SND_SOC_WCD938X_SDW || SND_SOC_QCOM_EXTERNAL_AUDIO
+	tristate "External Qualcomm WCD938x codec" if SND_SOC_QCOM_EXTERNAL_AUDIO
 	depends on SOUNDWIRE || !SOUNDWIRE
 
 config SND_SOC_WCD938X_SDW
@@ -2037,8 +2037,8 @@ config SND_SOC_WSA881X
 
 config SND_SOC_WSA883X
 	tristate "WSA883X Codec"
-	depends on SOUNDWIRE
-	select REGMAP_SOUNDWIRE
+	depends on SOUNDWIRE || SND_SOC_QCOM_EXTERNAL_AUDIO
+	select REGMAP_SOUNDWIRE if !SND_SOC_QCOM_EXTERNAL_AUDIO
 	tristate
 	help
 	  This enables support for Qualcomm WSA8830/WSA8835 Class-D
