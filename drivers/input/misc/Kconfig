@@ -206,6 +206,12 @@ config INPUT_QCOM_HV_HAPTICS
 	  for playing different vibration effects. To compile this driver as a module,
 	  choose M here: the module will be called qcom-hv-haptics.
 
+config RICHTAP_FOR_PMIC_ENABLE
+	bool "Motorola RichTap interface for QTI PMIC haptics"
+	depends on INPUT_QCOM_HV_HAPTICS != n && MMU
+	help
+	  Expose the Motorola RichTap misc device used by CTWO userspace.
+
 config INPUT_SPARCSPKR
 	tristate "SPARC Speaker support"
 	depends on PCI && SPARC64
