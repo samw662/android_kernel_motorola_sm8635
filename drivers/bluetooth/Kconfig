@@ -409,6 +409,13 @@ config MSM_BT_POWER
                 Say Y here to compile support for Bluetooth Power driver
                 into the kernel or say M to compile as a module.
 
+config BT_HW_SECURE_DISABLE
+	bool "Disable secure Bluetooth hardware control"
+	depends on ARCH_QCOM
+	help
+	  Use the non-secure Bluetooth power-control path in the external
+	  Qualcomm Bluetooth driver.
+
 
 config BT_MTKUART
 	tristate "MediaTek HCI UART driver"
