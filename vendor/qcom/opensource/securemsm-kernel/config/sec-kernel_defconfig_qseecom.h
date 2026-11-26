@@ -2,5 +2,3 @@
 /*
  * Copyright (c) 2022 Qualcomm Innovation Center, Inc. All rights reserved..
  */
-
-#define  CONFIG_QSEECOM 1

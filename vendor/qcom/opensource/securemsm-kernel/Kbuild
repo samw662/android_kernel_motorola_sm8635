@@ -18,6 +18,9 @@ else
 endif
 
 obj-$(CONFIG_QSEECOM) += qseecom_dlkm.o
+ifneq ($(filter y m,$(CONFIG_QSEECOM)),)
+KBUILD_CPPFLAGS += -DCONFIG_QSEECOM=1
+endif
 qseecom_dlkm-objs := qseecom/qseecom.o
 
 include $(SSG_MODULE_ROOT)/config/sec-kernel_defconfig_smcinvoke.conf
