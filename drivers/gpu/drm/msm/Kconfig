@@ -51,6 +51,8 @@ config DRM_MSM_HELPER
         Allows the display loadable module to link against
         helper functions.
 
+if !DRM_MSM_EXTERNAL
+
 config DRM_MSM_GPU_STATE
 	bool
 	depends on DRM_MSM && (DEBUG_FS || DEV_COREDUMP)
@@ -183,3 +185,5 @@ config DRM_MSM_HDMI_HDCP
 	default y
 	help
 	  Choose this option to enable HDCP state machine
+
+endif # !DRM_MSM_EXTERNAL
