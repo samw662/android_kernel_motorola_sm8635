@@ -36,6 +36,7 @@ source "drivers/block/Kconfig"
 source "drivers/nvme/Kconfig"
 
 source "drivers/misc/Kconfig"
+source "drivers/mmi_relay/Kconfig"
 
 source "drivers/scsi/Kconfig"
 

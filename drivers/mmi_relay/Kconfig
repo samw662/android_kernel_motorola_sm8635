@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config MMI_RELAY
+	tristate "Motorola relay support for fingerprint events"
+	depends on INPUT
+	help
+	  Enable the Motorola relay interface used by the Goodix fingerprint
+	  driver. The relay driver is built as an external module on CTWO.

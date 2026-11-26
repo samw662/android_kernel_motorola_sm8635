@@ -1389,4 +1389,27 @@ config TOUCHSCREEN_ZINITIX
 	  To compile this driver as a module, choose M here: the
 	  module will be called zinitix.
 
+config INPUT_TOUCHSCREEN_MMI
+	tristate "Motorola touchscreen integration"
+	help
+	  Enable the external Motorola touchscreen interface used by Goodix.
+
+config BOARD_USES_DOUBLE_TAP_CTRL
+	bool "Motorola double-tap gesture control"
+	depends on INPUT_TOUCHSCREEN_MMI != n
+	help
+	  Enable the gesture control interface used by the CTWO touchscreen.
+
+config TOUCHSCREEN_DEVICE_VIRTUAL_PATH
+	bool "Motorola touchscreen virtual device path"
+	depends on INPUT_TOUCHSCREEN_MMI != n
+	help
+	  Use the virtual device path expected by Motorola touchscreen userspace.
+
+config GTP_FOD
+	bool "Goodix fingerprint-on-display support"
+	depends on INPUT_TOUCHSCREEN_MMI != n
+	help
+	  Enable Goodix fingerprint-on-display handling in the external driver.
+
 endif
