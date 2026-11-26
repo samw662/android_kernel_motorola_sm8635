@@ -21,3 +21,10 @@ config QCOM_IPA
 	  of QCOM_Q6V5_COMMON (Y or M).
 
 	  If unsure, say N.
+
+config IPA_OUT_OF_TREE
+	bool "Use external Qualcomm IPA headers for WLAN"
+	depends on ARCH_QCOM && IPA3 != n
+	help
+	  Use the headers of the external Qualcomm IPA driver when building
+	  the WLAN module.
