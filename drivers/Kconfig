@@ -212,6 +212,7 @@ source "drivers/thunderbolt/Kconfig"
 source "drivers/android/Kconfig"
 
 source "drivers/gpu/trace/Kconfig"
+source "vendor/qcom/opensource/graphics-kernel/Kconfig"
 
 source "drivers/nvdimm/Kconfig"
 
