@@ -185,10 +185,11 @@ int fw_load(struct msm_vidc_core *core)
 		core->resource->fw_cookie = __load_fw_to_memory(core->pdev,
 								core->platform->data.fwname);
 		if (core->resource->fw_cookie <= 0) {
+			rc = core->resource->fw_cookie;
 			d_vpr_e("%s: firmware download failed %d\n",
-				__func__, core->resource->fw_cookie);
+				__func__, rc);
 			core->resource->fw_cookie = 0;
-			return -ENOMEM;
+			return rc ? rc : -EINVAL;
 		}
 	}
 

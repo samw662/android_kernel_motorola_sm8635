@@ -629,12 +629,6 @@ static int msm_vidc_component_master_bind(struct device *dev)
 		goto queues_deinit;
 	}
 
-	rc = msm_vidc_core_init(core);
-	if (rc) {
-		d_vpr_e("%s: sys init failed\n", __func__);
-		goto queues_deinit;
-	}
-
 	d_vpr_h("%s(): succssful\n", __func__);
 
 	return 0;
