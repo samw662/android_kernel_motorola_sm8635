@@ -22,6 +22,8 @@
 			"gcc_gpu_snoc_dvm_gfx",
 			"gpu_cc_ahb",
 			"apb_pclk";
+	qcom,gpu-model = "Adreno735";
+	qcom,chipid = <0x43030b00>;
 
 	qcom,min-access-length = <32>;
 
