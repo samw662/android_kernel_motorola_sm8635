@@ -966,4 +966,9 @@ config BATTERY_UG3105
 
 source "drivers/power/supply/qcom/Kconfig"
 
+config USE_MMI_CHARGER
+	bool "Use Motorola charger integration"
+	help
+	  Select Motorola charger integration for external adaptive charging.
+
 endif # POWER_SUPPLY
