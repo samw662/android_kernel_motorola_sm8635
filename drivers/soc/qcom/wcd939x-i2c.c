@@ -1614,8 +1614,11 @@ static irqreturn_t wcd_usbss_sdam_notifier_handler(int irq, void *data)
 {
 	struct wcd_usbss_ctxt *priv = data;
 	u8 *buf;
+	u8 mode;
 	size_t len = 0;
 	int rc = 0;
+	bool acknowledge = false;
+	bool runtime_acquired = false;
 
 	buf = nvmem_cell_read(priv->nvmem_cell, &len);
 	if (IS_ERR(buf)) {
@@ -1623,6 +1626,12 @@ static irqreturn_t wcd_usbss_sdam_notifier_handler(int irq, void *data)
 		dev_err(priv->dev, "nvmem cell read failed, rc:%d\n", rc);
 		return rc;
 	}
+	if (!len) {
+		dev_err(priv->dev, "nvmem cell is empty\n");
+		kfree(buf);
+		return IRQ_HANDLED;
+	}
+	mode = buf[0];
 	buf[0] &= 0x3;
 	dev_dbg(priv->dev, "sdam notifier request:%d\n", buf[0]);
 
@@ -1630,6 +1639,7 @@ static irqreturn_t wcd_usbss_sdam_notifier_handler(int irq, void *data)
 	if (buf[0] == priv->wcd_standby_status) {
 		dev_info(priv->dev, "%s: wcd already in %s mode:\n", __func__,
 				status_to_str(priv->wcd_standby_status));
+		acknowledge = true;
 		goto unlock_mutex;
 	}
 
@@ -1642,6 +1652,8 @@ static irqreturn_t wcd_usbss_sdam_notifier_handler(int irq, void *data)
 				__func__, rc);
 		goto unlock_mutex;
 	}
+	if (rc >= 0)
+		runtime_acquired = true;
 
 	if (wcd_usbss_ctxt_->suspended) {
 		wcd_usbss_ctxt_->defer_writes = true;
@@ -1657,12 +1669,20 @@ static irqreturn_t wcd_usbss_sdam_notifier_handler(int irq, void *data)
 	rc = wcd_usbss_sdam_handle_events_locked(buf[0]);
 	if (rc == 0) {
 		priv->wcd_standby_status = buf[0];
+		acknowledge = true;
 		dev_dbg(priv->dev, "wcd state transition to %s complete\n",
 				status_to_str(priv->wcd_standby_status));
 	}
 release_runtime:
-	release_runtime_env(wcd_usbss_ctxt_);
+	if (runtime_acquired)
+		release_runtime_env(wcd_usbss_ctxt_);
 unlock_mutex:
+	if (acknowledge) {
+		mode |= buf[0] | (buf[0] << 4);
+		rc = nvmem_cell_write(priv->nvmem_cell, &mode, 1);
+		if (rc != 1)
+			dev_err(priv->dev, "nvmem cell write failed, rc:%d\n", rc);
+	}
 	mutex_unlock(&wcd_usbss_ctxt_->switch_update_lock);
 	kfree(buf);
 	return IRQ_HANDLED;
