@@ -631,6 +631,7 @@ config IPA_OFFLOAD
 
 config IPA_OPT_WIFI_DP
 	bool "Enable IPA_OPT_WIFI_DP"
+	depends on IPA_OFFLOAD
 	default n
 
 config IPA_SET_RESET_TX_DB_PA
